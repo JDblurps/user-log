@@ -93,7 +93,7 @@ DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
 # REDIS_URL set  -> Redis (Upstash) -- required in production.
 # REDIS_URL unset -> in-memory layer, local single-process dev only.
 
-REDIS_URL = os.getenv("REDIS_URL")
+REDIS_URL = os.getenv("REDIS_URL", "").strip().strip("\"'") or None
 
 if REDIS_URL:
     CHANNEL_LAYERS = {
