@@ -165,6 +165,7 @@
     let socket = null;
     let retries = 0;
     let leavingPage = false;
+    let statusTimer = null;
 
 
     function formatTime(iso) {
@@ -298,6 +299,7 @@
 
             retries = 0;
 
+            clearTimeout(statusTimer);
             status.hidden = true;
 
             input.disabled = false;
@@ -334,11 +336,15 @@
             input.disabled = true;
             input.placeholder = "Reconnecting...";
 
-            status.hidden = false;
+            // Only show the banner if the reconnect takes a moment.
+            clearTimeout(statusTimer);
+            statusTimer = setTimeout(() => {
+                status.hidden = false;
+            }, 1500);
 
-            const delay =
-                Math.min(30000, 1000 * 2 ** retries) +
-                Math.random() * 500;
+            const delay = retries === 0
+                ? 200
+                : Math.min(30000, 1000 * 2 ** retries) + Math.random() * 500;
 
             retries += 1;
 
