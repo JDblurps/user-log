@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}
+People · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-heading">
+
+    <div>
+
+        <h1>People</h1>
+
+        <p class="muted">
+            Everyone on the site. Message anyone.
+        </p>
+
+    </div>
+
+</div>
+
+
+<form method="get" class="composer">
+
+    <input
+        class="field"
+        name="q"
+        value="{{ q }}"
+        placeholder="Search by name..."
+        autocomplete="off"
+        aria-label="Search people"
+    >
+
+    <button class="primary" type="submit">
+        Search
+    </button>
+
+</form>
+
+
+<section class="panel chat-list">
+
+    {% for person in people %}
+
+        <div class="chat-row">
+
+            <div class="avatar">
+                {{ person.username|first|upper }}
+            </div>
+
+            <div class="chat-info">
+                <strong>{{ person.username }}</strong>
+            </div>
+
+            <form method="post" action="{% url 'start_dm' person.id %}">
+
+                {% csrf_token %}
+
+                <button class="primary" type="submit">
+                    Message
+                </button>
+
+            </form>
+
+        </div>
+
+    {% empty %}
+
+        <div class="empty">
+            <p>No one found.</p>
+        </div>
+
+    {% endfor %}
+
+</section>
+
+{% endblock %}

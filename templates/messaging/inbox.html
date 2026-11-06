@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}
+Chats · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-heading">
+
+    <div>
+
+        <h1>Your chats</h1>
+
+        <p class="muted">
+            Direct messages and groups, all in one place.
+        </p>
+
+    </div>
+
+
+    <div>
+
+        <a class="primary button-link" href="{% url 'people' %}">
+            + Message someone
+        </a>
+
+        <a class="button-link" href="{% url 'groups' %}">
+            Browse groups
+        </a>
+
+    </div>
+
+</div>
+
+
+<section class="panel chat-list">
+
+
+    {% for item in chats %}
+
+        <a
+            class="chat-row"
+            href="{% url 'conversation' item.conversation.id %}"
+        >
+
+            <div class="avatar">
+
+                {{ item.name|first|upper }}
+
+            </div>
+
+
+            <div class="chat-info">
+
+                <strong>
+                    {{ item.name }}
+                </strong>
+
+                <span class="muted preview">
+
+                    {% if item.latest %}
+
+                        {{ item.latest.sender.username }}:
+                        {{ item.latest.body }}
+
+                    {% else %}
+
+                        No messages yet
+
+                    {% endif %}
+
+                </span>
+
+            </div>
+
+
+            {% if item.unread %}
+
+                <span class="unread">
+                    {{ item.unread }}
+                </span>
+
+            {% endif %}
+
+        </a>
+
+
+    {% empty %}
+
+        <div class="empty">
+
+            <h2>No chats yet</h2>
+
+            <p>
+                Message anyone on the site, or join a group.
+            </p>
+
+            <a href="{% url 'people' %}">
+                Find people
+            </a>
+
+            &middot;
+
+            <a href="{% url 'groups' %}">
+                Browse groups
+            </a>
+
+        </div>
+
+    {% endfor %}
+
+
+</section>
+
+{% endblock %}

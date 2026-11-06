@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Log in · SimpleChat{% endblock %}
+
+{% block content %}
+
+<section class="panel narrow">
+
+    <h1>Log in</h1>
+
+    <form method="post">
+
+        {% csrf_token %}
+
+        {{ form.as_p }}
+
+        <button class="primary" type="submit">Log in</button>
+
+    </form>
+
+    <p class="muted">
+        New here? <a href="{% url 'register' %}">Create an account</a>
+    </p>
+
+</section>
+
+{% endblock %}

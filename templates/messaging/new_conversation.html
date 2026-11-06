@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}
+New group · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<section class="panel narrow">
+
+    <a class="back" href="{% url 'groups' %}">
+        ← All groups
+    </a>
+
+
+    <h1>Create a group</h1>
+
+    <p class="muted">
+        Anyone on the site will be able to find and join it.
+    </p>
+
+
+    <form method="post">
+
+        {% csrf_token %}
+
+        {{ form.as_p }}
+
+        <button class="primary" type="submit">
+            Create group
+        </button>
+
+    </form>
+
+</section>
+
+{% endblock %}

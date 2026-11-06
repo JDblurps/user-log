@@ -1,0 +1,8 @@
+Django>=5.2,<5.3
+dj-database-url>=2.3
+psycopg[binary]>=3.2
+channels[daphne]>=4.2
+channels-redis>=4.2
+whitenoise>=6.9
+python-dotenv>=1.0
+websockets>=13.0

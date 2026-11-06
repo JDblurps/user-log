@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}
+Groups · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-heading">
+
+    <div>
+
+        <h1>Groups</h1>
+
+        <p class="muted">
+            Open groups. Join any of them, or start your own.
+        </p>
+
+    </div>
+
+    <a class="primary button-link" href="{% url 'new_conversation' %}">
+        + New group
+    </a>
+
+</div>
+
+
+<form method="get" class="composer">
+
+    <input
+        class="field"
+        name="q"
+        value="{{ q }}"
+        placeholder="Search groups..."
+        autocomplete="off"
+        aria-label="Search groups"
+    >
+
+    <button class="primary" type="submit">
+        Search
+    </button>
+
+</form>
+
+
+<section class="panel chat-list">
+
+    {% for g in groups %}
+
+        <div class="chat-row">
+
+            <div class="avatar">
+                {{ g.title|default:"G"|first|upper }}
+            </div>
+
+            <div class="chat-info">
+
+                <strong>{{ g.title|default:"Group chat" }}</strong>
+
+                <span class="muted preview">
+                    {{ g.member_count }} member{{ g.member_count|pluralize }}
+                </span>
+
+            </div>
+
+            {% if g.id in my_ids %}
+
+                <a class="button-link" href="{% url 'conversation' g.id %}">
+                    Open
+                </a>
+
+            {% else %}
+
+                <form method="post" action="{% url 'join_group' g.id %}">
+
+                    {% csrf_token %}
+
+                    <button class="primary" type="submit">
+                        Join
+                    </button>
+
+                </form>
+
+            {% endif %}
+
+        </div>
+
+    {% empty %}
+
+        <div class="empty">
+
+            <h2>No groups yet</h2>
+
+            <a href="{% url 'new_conversation' %}">
+                Create the first one
+            </a>
+
+        </div>
+
+    {% endfor %}
+
+</section>
+
+{% endblock %}

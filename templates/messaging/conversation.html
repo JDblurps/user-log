@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+
+{% block title %}
+{{ conversation_name }} · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<section class="panel conversation-panel">
+
+
+    <div class="conversation-head">
+
+        <a class="back" href="{% url 'inbox' %}">
+            ←
+        </a>
+
+        <div>
+
+            <h1>
+                {{ conversation_name }}
+            </h1>
+
+            <span class="muted">
+
+                {% if conversation.is_group %}
+
+                    Group &middot; {{ conversation.members.count }} members
+
+                {% else %}
+
+                    Direct message
+
+                {% endif %}
+
+            </span>
+
+        </div>
+
+
+        {% if conversation.is_group %}
+
+            <form
+                method="post"
+                action="{% url 'leave_group' conversation.id %}"
+                class="inline"
+            >
+
+                {% csrf_token %}
+
+                <button class="link-button" type="submit">
+                    Leave
+                </button>
+
+            </form>
+
+        {% endif %}
+
+    </div>
+
+
+    <div id="status" class="muted" hidden>
+        Reconnecting…
+    </div>
+
+
+    <div
+        id="messages"
+        class="messages"
+        data-user-id="{{ user.id }}"
+    >
+
+        {% for message in chat_messages %}
+
+            <div
+                class="message {% if message.sender_id == user.id %}mine{% endif %}"
+                data-message-id="{{ message.id }}"
+            >
+
+                <div class="message-meta">
+
+                    {% if message.sender_id != user.id %}
+
+                        <strong>
+                            {{ message.sender.username }}
+                        </strong>
+
+                    {% else %}
+
+                        <strong>
+                            You
+                        </strong>
+
+                    {% endif %}
+
+
+                    <time datetime="{{ message.created_at|date:'c' }}">
+                        {{ message.created_at|date:"H:i" }}
+                    </time>
+
+                </div>
+
+
+                <div class="bubble">
+
+                    {{ message.body|linebreaksbr }}
+
+                </div>
+
+            </div>
+
+        {% empty %}
+
+            <div class="empty" id="empty-state">
+                Say hello 👋
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+
+
+    <form id="message-form" class="composer">
+
+        {% csrf_token %}
+
+        <input
+            id="message-input"
+            autocomplete="off"
+            maxlength="4000"
+            placeholder="Write a message..."
+            aria-label="Message"
+        >
+
+        <button class="primary" type="submit">
+            Send
+        </button>
+
+    </form>
+
+
+</section>
+
+
+<script>
+
+(() => {
+
+    const conversationId = {{ conversation.id }};
+
+    const box = document.getElementById("messages");
+    const form = document.getElementById("message-form");
+    const input = document.getElementById("message-input");
+    const status = document.getElementById("status");
+
+    const currentUserId = Number(box.dataset.userId);
+
+    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = `${scheme}://${window.location.host}/ws/chat/${conversationId}/`;
+
+    const seen = new Set();
+
+    let socket = null;
+    let retries = 0;
+    let leavingPage = false;
+
+
+    function formatTime(iso) {
+
+        const d = new Date(iso);
+
+        if (isNaN(d)) {
+            return "";
+        }
+
+        return d.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+
+    }
+
+
+    // Show server-rendered times in the viewer's own timezone.
+    box.querySelectorAll("time[datetime]").forEach(t => {
+        t.textContent = formatTime(t.getAttribute("datetime"));
+    });
+
+    box.querySelectorAll("[data-message-id]").forEach(el => {
+        seen.add(Number(el.dataset.messageId));
+    });
+
+
+    function lastId() {
+
+        let max = 0;
+
+        seen.forEach(id => {
+            if (id > max) {
+                max = id;
+            }
+        });
+
+        return max;
+
+    }
+
+
+    function scrollDown() {
+
+        box.scrollTop = box.scrollHeight;
+
+    }
+
+
+    function addMessage(data) {
+
+        const id = Number(data.id);
+
+        if (seen.has(id)) {
+            return;
+        }
+
+        seen.add(id);
+
+
+        const empty = document.getElementById("empty-state");
+
+        if (empty) {
+            empty.remove();
+        }
+
+
+        const mine = Number(data.sender_id) === currentUserId;
+
+        const wrap = document.createElement("div");
+        wrap.className = "message" + (mine ? " mine" : "");
+        wrap.dataset.messageId = id;
+
+        const meta = document.createElement("div");
+        meta.className = "message-meta";
+
+        const name = document.createElement("strong");
+        name.textContent = mine ? "You" : data.sender;
+
+        const time = document.createElement("time");
+        time.setAttribute("datetime", data.created_at);
+        time.textContent = formatTime(data.created_at);
+
+        meta.append(name, time);
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = data.body;
+
+        wrap.append(meta, bubble);
+        box.appendChild(wrap);
+
+        scrollDown();
+
+    }
+
+
+    // After a reconnect, fetch anything we missed while disconnected.
+    async function catchUp() {
+
+        try {
+
+            const res = await fetch(
+                `/chat/${conversationId}/since/${lastId()}/`,
+                { credentials: "same-origin" }
+            );
+
+            if (!res.ok) {
+                return;
+            }
+
+            const data = await res.json();
+
+            data.messages.forEach(addMessage);
+
+        } catch (error) {
+
+            console.error("Catch-up failed:", error);
+
+        }
+
+    }
+
+
+    function connect() {
+
+        socket = new WebSocket(wsUrl);
+
+        socket.addEventListener("open", async () => {
+
+            retries = 0;
+
+            status.hidden = true;
+
+            input.disabled = false;
+            input.placeholder = "Write a message...";
+
+            await catchUp();
+
+            input.focus();
+
+        });
+
+
+        socket.addEventListener("message", event => {
+
+            try {
+
+                addMessage(JSON.parse(event.data));
+
+            } catch (error) {
+
+                console.error("Could not process message:", error);
+
+            }
+
+        });
+
+
+        socket.addEventListener("close", () => {
+
+            if (leavingPage) {
+                return;
+            }
+
+            input.disabled = true;
+            input.placeholder = "Reconnecting...";
+
+            status.hidden = false;
+
+            const delay =
+                Math.min(30000, 1000 * 2 ** retries) +
+                Math.random() * 500;
+
+            retries += 1;
+
+            setTimeout(connect, delay);
+
+        });
+
+    }
+
+
+    form.addEventListener("submit", event => {
+
+        event.preventDefault();
+
+        const body = input.value.trim();
+
+        if (!body || !socket || socket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        socket.send(JSON.stringify({ body: body }));
+
+        input.value = "";
+        input.focus();
+
+    });
+
+
+    window.addEventListener("beforeunload", () => {
+        leavingPage = true;
+    });
+
+
+    input.disabled = true;
+
+    scrollDown();
+
+    connect();
+
+})();
+
+</script>
+
+{% endblock %}
