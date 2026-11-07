@@ -93,7 +93,7 @@ DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
 # REDIS_URL set  -> Redis (Upstash) -- required in production.
 # REDIS_URL unset -> in-memory layer, local single-process dev only.
 
-REDIS_URL = os.getenv("REDIS_URL", "").strip().strip("\"'") or None
+REDIS_URL = os.getenv("REDIS_URL")
 
 if REDIS_URL:
     CHANNEL_LAYERS = {
@@ -155,6 +155,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "inbox"
 LOGOUT_REDIRECT_URL = "login"
+
+
+# Cloudflare Turnstile (optional bot protection on signup).
+# Leave both unset to disable it.
+
+TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "")
 
 
 # Production security

@@ -15,6 +15,12 @@ urlpatterns = [
     path("groups/<int:conversation_id>/join/", views.join_group, name="join_group"),
     path("groups/<int:conversation_id>/leave/", views.leave_group, name="leave_group"),
 
+    path("people/<int:user_id>/block/", views.block_user, name="block_user"),
+    path("people/<int:user_id>/unblock/", views.unblock_user, name="unblock_user"),
+    path("blocked/", views.blocked_list, name="blocked"),
+
+    path("messages/<int:message_id>/report/", views.report_message, name="report_message"),
+
     path("chat/<int:conversation_id>/", views.conversation_view, name="conversation"),
     path(
         "chat/<int:conversation_id>/send/",

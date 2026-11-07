@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}
+Blocked users · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-heading">
+
+    <div>
+
+        <h1>Blocked users</h1>
+
+        <p class="muted">
+            You won't see their messages and they can't message you.
+        </p>
+
+    </div>
+
+    <a class="button-link" href="{% url 'people' %}">
+        ← People
+    </a>
+
+</div>
+
+
+<section class="panel chat-list">
+
+    {% for block in blocks %}
+
+        <div class="chat-row">
+
+            <div class="avatar">
+                {{ block.blocked.username|first|upper }}
+            </div>
+
+            <div class="chat-info">
+                <strong>{{ block.blocked.username }}</strong>
+            </div>
+
+            <form method="post" action="{% url 'unblock_user' block.blocked.id %}">
+
+                {% csrf_token %}
+
+                <button class="primary" type="submit">
+                    Unblock
+                </button>
+
+            </form>
+
+        </div>
+
+    {% empty %}
+
+        <div class="empty">
+            <p>You haven't blocked anyone.</p>
+        </div>
+
+    {% endfor %}
+
+</section>
+
+{% endblock %}

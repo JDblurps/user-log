@@ -18,6 +18,16 @@
 
         {{ form.as_p }}
 
+        {% if turnstile_site_key %}
+
+            <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+            <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
+
+            <br>
+
+        {% endif %}
+
         <button class="primary" type="submit">Create account</button>
 
     </form>

@@ -7,6 +7,15 @@
 
 {% block content %}
 
+<style>
+    .msg-actions { margin-left: 6px; }
+    .msg-actions .link-button {
+        font-size: 0.72rem;
+        color: var(--muted);
+        margin-left: 6px;
+    }
+</style>
+
 <section class="panel conversation-panel">
 
 
@@ -99,6 +108,28 @@
                         {{ message.created_at|date:"H:i" }}
                     </time>
 
+                    {% if message.sender_id != user.id %}
+
+                        <span class="msg-actions">
+
+                            <button
+                                type="button"
+                                class="link-button"
+                                data-action="report"
+                                data-message-id="{{ message.id }}"
+                            >Report</button>
+
+                            <button
+                                type="button"
+                                class="link-button"
+                                data-action="block"
+                                data-user-id="{{ message.sender_id }}"
+                            >Block</button>
+
+                        </span>
+
+                    {% endif %}
+
                 </div>
 
 
@@ -144,6 +175,8 @@
 </section>
 
 
+{{ blocked_ids|json_script:"blocked-ids" }}
+
 <script>
 
 (() => {
@@ -161,6 +194,10 @@
     const wsUrl = `${scheme}://${window.location.host}/ws/chat/${conversationId}/`;
 
     const seen = new Set();
+
+    const blockedIds = new Set(
+        JSON.parse(document.getElementById("blocked-ids").textContent)
+    );
 
     let socket = null;
     let retries = 0;
@@ -227,6 +264,10 @@
 
         seen.add(id);
 
+        if (blockedIds.has(Number(data.sender_id))) {
+            return;
+        }
+
 
         const empty = document.getElementById("empty-state");
 
@@ -252,6 +293,30 @@
         time.textContent = formatTime(data.created_at);
 
         meta.append(name, time);
+
+        if (!mine) {
+
+            const actions = document.createElement("span");
+            actions.className = "msg-actions";
+
+            const report = document.createElement("button");
+            report.type = "button";
+            report.className = "link-button";
+            report.dataset.action = "report";
+            report.dataset.messageId = id;
+            report.textContent = "Report";
+
+            const block = document.createElement("button");
+            block.type = "button";
+            block.className = "link-button";
+            block.dataset.action = "block";
+            block.dataset.userId = data.sender_id;
+            block.textContent = "Block";
+
+            actions.append(report, block);
+            meta.append(actions);
+
+        }
 
         const bubble = document.createElement("div");
         bubble.className = "bubble";
@@ -407,6 +472,11 @@
                 return;
             }
 
+            if (res.status === 403) {
+                flash("You can't message this person.");
+                return;
+            }
+
             if (!res.ok) {
                 throw new Error("HTTP " + res.status);
             }
@@ -425,6 +495,90 @@
 
             sending = false;
             input.focus();
+
+        }
+
+    });
+
+
+    function postJson(url, payload) {
+
+        return fetch(url, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrf
+            },
+            body: JSON.stringify(payload)
+        });
+
+    }
+
+
+    // Report / Block buttons (works for old and newly arrived messages).
+    box.addEventListener("click", async event => {
+
+        const button = event.target.closest("[data-action]");
+
+        if (!button) {
+            return;
+        }
+
+        try {
+
+            if (button.dataset.action === "report") {
+
+                const reason = window.prompt(
+                    "Why are you reporting this message? (optional)"
+                );
+
+                if (reason === null) {
+                    return;
+                }
+
+                const res = await postJson(
+                    `/messages/${button.dataset.messageId}/report/`,
+                    { reason: reason }
+                );
+
+                flash(
+                    res.ok
+                        ? "Thanks, we'll take a look."
+                        : "Couldn't send the report."
+                );
+
+            }
+
+            if (button.dataset.action === "block") {
+
+                const ok = window.confirm(
+                    "Block this person? You won't see their messages " +
+                    "and they won't be able to message you."
+                );
+
+                if (!ok) {
+                    return;
+                }
+
+                const res = await postJson(
+                    `/people/${button.dataset.userId}/block/`,
+                    {}
+                );
+
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    flash("Couldn't block that person.");
+                }
+
+            }
+
+        } catch (error) {
+
+            console.error(error);
+
+            flash("Something went wrong.");
 
         }
 

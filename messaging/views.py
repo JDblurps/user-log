@@ -3,6 +3,8 @@ from datetime import timedelta
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
@@ -14,13 +16,30 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import GroupForm
-from .models import Conversation, Membership, Message
+from .models import (
+    Block,
+    Conversation,
+    Membership,
+    Message,
+    Report,
+    SignupAttempt,
+)
+from .utils import (
+    blocked_ids_for,
+    client_ip,
+    is_blocked_between,
+    join_default_rooms,
+    verify_turnstile,
+)
 
 
 User = get_user_model()
 
 HISTORY_LIMIT = 200
 LIST_LIMIT = 100
+
+
+SIGNUPS_PER_IP_PER_HOUR = 5
 
 
 def register_view(request):
@@ -30,14 +49,50 @@ def register_view(request):
 
     form = UserCreationForm(request.POST or None)
 
-    if request.method == "POST" and form.is_valid():
+    if request.method == "POST":
 
-        user = form.save()
-        login(request, user)
+        ip = client_ip(request)
 
-        return redirect("inbox")
+        too_many = SignupAttempt.objects.filter(
+            ip=ip,
+            created_at__gte=timezone.now() - timedelta(hours=1)
+        ).count() >= SIGNUPS_PER_IP_PER_HOUR
 
-    return render(request, "registration/register.html", {"form": form})
+        if too_many:
+
+            messages.error(
+                request,
+                "Too many accounts were created from your network. "
+                "Please try again later."
+            )
+
+        elif not verify_turnstile(request):
+
+            messages.error(
+                request,
+                "Please complete the verification and try again."
+            )
+
+        elif form.is_valid():
+
+            user = form.save()
+
+            SignupAttempt.objects.create(ip=ip)
+
+            join_default_rooms(user)
+
+            login(request, user)
+
+            return redirect("inbox")
+
+    return render(
+        request,
+        "registration/register.html",
+        {
+            "form": form,
+            "turnstile_site_key": settings.TURNSTILE_SITE_KEY,
+        }
+    )
 
 
 @login_required
@@ -112,6 +167,12 @@ def start_dm(request, user_id):
 
     if other.pk == request.user.pk:
         return redirect("inbox")
+
+    if is_blocked_between(request.user.pk, other.pk):
+
+        messages.error(request, "You can't message this person.")
+
+        return redirect("people")
 
     with transaction.atomic():
 
@@ -264,9 +325,12 @@ def conversation_view(request, conversation_id):
     membership.last_read_at = timezone.now()
     membership.save(update_fields=["last_read_at"])
 
+    blocked = blocked_ids_for(request.user)
+
     recent = list(
         conversation.messages
         .select_related("sender")
+        .exclude(sender_id__in=blocked)
         .order_by("-created_at")[:HISTORY_LIMIT]
     )
 
@@ -278,7 +342,8 @@ def conversation_view(request, conversation_id):
         {
             "conversation": conversation,
             "conversation_name": conversation.display_name_for(request.user),
-            "chat_messages": recent
+            "chat_messages": recent,
+            "blocked_ids": sorted(blocked),
         }
     )
 
@@ -297,6 +362,7 @@ def messages_since(request, conversation_id, last_id):
     msgs = (
         Message.objects
         .filter(conversation_id=conversation_id, id__gt=last_id)
+        .exclude(sender_id__in=blocked_ids_for(request.user))
         .select_related("sender")
         .order_by("id")[:HISTORY_LIMIT]
     )
@@ -330,6 +396,20 @@ def send_message(request, conversation_id):
         conversation_id=conversation_id,
         user=request.user
     )
+
+    conversation = get_object_or_404(Conversation, pk=conversation_id)
+
+    if not conversation.is_group:
+
+        other = (
+            Membership.objects
+            .filter(conversation=conversation)
+            .exclude(user=request.user)
+            .first()
+        )
+
+        if other and is_blocked_between(request.user.pk, other.user_id):
+            return JsonResponse({"error": "blocked"}, status=403)
 
     try:
         data = json.loads(request.body)
@@ -375,3 +455,98 @@ def send_message(request, conversation_id):
         pass
 
     return JsonResponse(payload)
+
+
+# ---------- Blocking and reporting ----------
+
+@login_required
+@require_POST
+def block_user(request, user_id):
+
+    target = get_object_or_404(User, pk=user_id)
+
+    if target.pk != request.user.pk:
+
+        Block.objects.get_or_create(
+            blocker=request.user,
+            blocked=target
+        )
+
+    return JsonResponse({"ok": True})
+
+
+@login_required
+@require_POST
+def unblock_user(request, user_id):
+
+    Block.objects.filter(
+        blocker=request.user,
+        blocked_id=user_id
+    ).delete()
+
+    return redirect("blocked")
+
+
+@login_required
+def blocked_list(request):
+
+    blocks = (
+        Block.objects
+        .filter(blocker=request.user)
+        .select_related("blocked")
+        .order_by("blocked__username")
+    )
+
+    return render(
+        request,
+        "messaging/blocked.html",
+        {"blocks": blocks}
+    )
+
+
+REPORTS_PER_HOUR = 20
+
+
+@login_required
+@require_POST
+def report_message(request, message_id):
+
+    message = get_object_or_404(
+        Message.objects.select_related("sender"),
+        pk=message_id
+    )
+
+    # You can only report messages from rooms you are in.
+    get_object_or_404(
+        Membership,
+        conversation_id=message.conversation_id,
+        user=request.user
+    )
+
+    if message.sender_id == request.user.id:
+        return JsonResponse({"error": "invalid"}, status=400)
+
+    recent = Report.objects.filter(
+        reporter=request.user,
+        created_at__gte=timezone.now() - timedelta(hours=1)
+    ).count()
+
+    if recent >= REPORTS_PER_HOUR:
+        return JsonResponse({"error": "slow down"}, status=429)
+
+    try:
+        reason = str(json.loads(request.body).get("reason", "")).strip()[:500]
+    except (ValueError, AttributeError):
+        reason = ""
+
+    Report.objects.get_or_create(
+        reporter=request.user,
+        message=message,
+        defaults={
+            "reported_user": message.sender,
+            "message_body": message.body,
+            "reason": reason,
+        }
+    )
+
+    return JsonResponse({"ok": True})
