@@ -1,3 +1,8 @@
+import json
+from datetime import timedelta
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
@@ -308,3 +313,65 @@ def messages_since(request, conversation_id, last_id):
             for m in msgs
         ]
     })
+
+
+@login_required
+@require_POST
+def send_message(request, conversation_id):
+    """Save a message and broadcast it to the room.
+
+    The browser sends messages here over plain HTTP so a send never
+    silently disappears if the WebSocket happens to be reconnecting.
+    The WebSocket is only used to receive.
+    """
+
+    get_object_or_404(
+        Membership,
+        conversation_id=conversation_id,
+        user=request.user
+    )
+
+    try:
+        data = json.loads(request.body)
+        body = str(data.get("body", "")).strip()
+    except (ValueError, AttributeError):
+        return JsonResponse({"error": "bad request"}, status=400)
+
+    if not body or len(body) > 4000:
+        return JsonResponse({"error": "invalid message"}, status=400)
+
+    # Basic flood protection: one message per half second per user.
+    too_fast = Message.objects.filter(
+        sender=request.user,
+        created_at__gte=timezone.now() - timedelta(milliseconds=500)
+    ).exists()
+
+    if too_fast:
+        return JsonResponse({"error": "slow down"}, status=429)
+
+    message = Message.objects.create(
+        conversation_id=conversation_id,
+        sender=request.user,
+        body=body
+    )
+
+    payload = {
+        "id": message.id,
+        "body": message.body,
+        "sender": request.user.username,
+        "sender_id": request.user.id,
+        "created_at": message.created_at.isoformat(),
+    }
+
+    try:
+        layer = get_channel_layer()
+
+        async_to_sync(layer.group_send)(
+            f"chat_{conversation_id}",
+            {"type": "chat_message", **payload}
+        )
+    except Exception:
+        # The message is saved; other viewers will catch up on reconnect.
+        pass
+
+    return JsonResponse(payload)

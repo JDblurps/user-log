@@ -17,6 +17,11 @@ urlpatterns = [
 
     path("chat/<int:conversation_id>/", views.conversation_view, name="conversation"),
     path(
+        "chat/<int:conversation_id>/send/",
+        views.send_message,
+        name="send_message"
+    ),
+    path(
         "chat/<int:conversation_id>/since/<int:last_id>/",
         views.messages_since,
         name="messages_since"

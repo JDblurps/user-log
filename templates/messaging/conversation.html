@@ -166,6 +166,7 @@
     let retries = 0;
     let leavingPage = false;
     let statusTimer = null;
+    let openedAt = 0;
 
 
     function formatTime(iso) {
@@ -297,13 +298,10 @@
 
         socket.addEventListener("open", async () => {
 
-            retries = 0;
+            openedAt = Date.now();
 
             clearTimeout(statusTimer);
             status.hidden = true;
-
-            input.disabled = false;
-            input.placeholder = "Write a message...";
 
             await catchUp();
 
@@ -333,14 +331,17 @@
                 return;
             }
 
-            input.disabled = true;
-            input.placeholder = "Reconnecting...";
-
             // Only show the banner if the reconnect takes a moment.
             clearTimeout(statusTimer);
             statusTimer = setTimeout(() => {
                 status.hidden = false;
             }, 1500);
+
+            // Only reset the backoff if the connection stayed up for a while,
+            // otherwise a connect-then-drop loop would hammer the server.
+            if (Date.now() - openedAt > 10000) {
+                retries = 0;
+            }
 
             const delay = retries === 0
                 ? 200
@@ -355,20 +356,77 @@
     }
 
 
-    form.addEventListener("submit", event => {
+    const csrf = form.querySelector("[name=csrfmiddlewaretoken]").value;
+
+    let sending = false;
+    let flashTimer = null;
+
+
+    function flash(text) {
+
+        clearTimeout(flashTimer);
+
+        status.textContent = text;
+        status.hidden = false;
+
+        flashTimer = setTimeout(() => {
+            status.textContent = "Reconnecting…";
+            status.hidden = true;
+        }, 3000);
+
+    }
+
+
+    // Messages are sent over HTTP (reliable); the WebSocket only receives.
+    form.addEventListener("submit", async event => {
 
         event.preventDefault();
 
         const body = input.value.trim();
 
-        if (!body || !socket || socket.readyState !== WebSocket.OPEN) {
+        if (!body || sending) {
             return;
         }
 
-        socket.send(JSON.stringify({ body: body }));
+        sending = true;
 
-        input.value = "";
-        input.focus();
+        try {
+
+            const res = await fetch(`/chat/${conversationId}/send/`, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrf
+                },
+                body: JSON.stringify({ body: body })
+            });
+
+            if (res.status === 429) {
+                flash("Slow down a little.");
+                return;
+            }
+
+            if (!res.ok) {
+                throw new Error("HTTP " + res.status);
+            }
+
+            addMessage(await res.json());
+
+            input.value = "";
+
+        } catch (error) {
+
+            console.error("Send failed:", error);
+
+            flash("Couldn't send. Your message is still in the box, try again.");
+
+        } finally {
+
+            sending = false;
+            input.focus();
+
+        }
 
     });
 
@@ -377,8 +435,6 @@
         leavingPage = true;
     });
 
-
-    input.disabled = true;
 
     scrollDown();
 
