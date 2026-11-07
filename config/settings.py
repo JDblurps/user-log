@@ -29,16 +29,12 @@ ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,.vercel.ap
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "https://*.vercel.app")
 
 INSTALLED_APPS = [
-    "daphne",
-
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-
-    "channels",
 
     "messaging",
 ]
@@ -89,29 +85,10 @@ DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
 
 
-# Django Channels layer.
-# REDIS_URL set  -> Redis (Upstash) -- required in production.
-# REDIS_URL unset -> in-memory layer, local single-process dev only.
+# Realtime (Ably). Messages are sent over HTTP and pushed to browsers by Ably.
+# Without a key the site still works: browsers just poll every few seconds.
 
-REDIS_URL = os.getenv("REDIS_URL")
-
-if REDIS_URL:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {
-                "hosts": [REDIS_URL],
-            },
-        },
-    }
-elif DEBUG:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels.layers.InMemoryChannelLayer",
-        },
-    }
-else:
-    raise RuntimeError("Set REDIS_URL when DEBUG is off.")
+ABLY_API_KEY = os.getenv("ABLY_API_KEY", "").strip().strip("\"'")
 
 
 # Password validation

@@ -177,6 +177,10 @@
 
 {{ blocked_ids|json_script:"blocked-ids" }}
 
+{% if realtime %}
+<script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+{% endif %}
+
 <script>
 
 (() => {
@@ -190,8 +194,7 @@
 
     const currentUserId = Number(box.dataset.userId);
 
-    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    const wsUrl = `${scheme}://${window.location.host}/ws/chat/${conversationId}/`;
+    const realtimeEnabled = {{ realtime|yesno:"true,false" }};
 
     const seen = new Set();
 
@@ -199,11 +202,9 @@
         JSON.parse(document.getElementById("blocked-ids").textContent)
     );
 
-    let socket = null;
-    let retries = 0;
-    let leavingPage = false;
+    let realtime = null;
     let statusTimer = null;
-    let openedAt = 0;
+    let pollTimer = null;
 
 
     function formatTime(iso) {
@@ -357,29 +358,44 @@
     }
 
 
+    function startPolling() {
+
+        clearInterval(pollTimer);
+
+        pollTimer = setInterval(catchUp, 3000);
+
+    }
+
+
     function connect() {
 
-        socket = new WebSocket(wsUrl);
+        // No realtime service available (or its script failed to load):
+        // fall back to checking for new messages every few seconds.
+        if (!realtimeEnabled || typeof Ably === "undefined") {
 
-        socket.addEventListener("open", async () => {
+            catchUp();
+            startPolling();
 
-            openedAt = Date.now();
+            return;
 
-            clearTimeout(statusTimer);
-            status.hidden = true;
+        }
 
-            await catchUp();
-
-            input.focus();
-
+        realtime = new Ably.Realtime({
+            authUrl: "/ably-auth/",
+            authParams: { conversation: String(conversationId) }
         });
 
+        const channel = realtime.channels.get(`chat-${conversationId}`);
 
-        socket.addEventListener("message", event => {
+        channel.subscribe("message", msg => {
 
             try {
 
-                addMessage(JSON.parse(event.data));
+                addMessage(
+                    typeof msg.data === "string"
+                        ? JSON.parse(msg.data)
+                        : msg.data
+                );
 
             } catch (error) {
 
@@ -389,36 +405,55 @@
 
         });
 
+        realtime.connection.on("connected", () => {
 
-        socket.addEventListener("close", () => {
-
-            if (leavingPage) {
-                return;
-            }
-
-            // Only show the banner if the reconnect takes a moment.
             clearTimeout(statusTimer);
-            statusTimer = setTimeout(() => {
-                status.hidden = false;
-            }, 1500);
+            clearInterval(pollTimer);
 
-            // Only reset the backoff if the connection stayed up for a while,
-            // otherwise a connect-then-drop loop would hammer the server.
-            if (Date.now() - openedAt > 10000) {
-                retries = 0;
-            }
+            status.hidden = true;
 
-            const delay = retries === 0
-                ? 200
-                : Math.min(30000, 1000 * 2 ** retries) + Math.random() * 500;
-
-            retries += 1;
-
-            setTimeout(connect, delay);
+            // Pick up anything that arrived while we were offline.
+            catchUp();
 
         });
 
+        const showReconnecting = () => {
+
+            clearTimeout(statusTimer);
+
+            statusTimer = setTimeout(() => {
+                status.textContent = "Reconnecting…";
+                status.hidden = false;
+            }, 1500);
+
+        };
+
+        realtime.connection.on("disconnected", showReconnecting);
+        realtime.connection.on("suspended", showReconnecting);
+
+        realtime.connection.on("failed", () => {
+            startPolling();
+        });
+
+        // Safety net: if we aren't connected after 10 seconds, poll instead.
+        setTimeout(() => {
+
+            if (realtime.connection.state !== "connected") {
+                startPolling();
+            }
+
+        }, 10000);
+
     }
+
+
+    document.addEventListener("visibilitychange", () => {
+
+        if (!document.hidden) {
+            catchUp();
+        }
+
+    });
 
 
     const csrf = form.querySelector("[name=csrfmiddlewaretoken]").value;
@@ -442,7 +477,7 @@
     }
 
 
-    // Messages are sent over HTTP (reliable); the WebSocket only receives.
+    // Messages are sent over HTTP (reliable); realtime only delivers them.
     form.addEventListener("submit", async event => {
 
         event.preventDefault();
@@ -586,7 +621,11 @@
 
 
     window.addEventListener("beforeunload", () => {
-        leavingPage = true;
+
+        if (realtime) {
+            realtime.close();
+        }
+
     });
 
 

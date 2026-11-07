@@ -19,6 +19,8 @@ urlpatterns = [
     path("people/<int:user_id>/unblock/", views.unblock_user, name="unblock_user"),
     path("blocked/", views.blocked_list, name="blocked"),
 
+    path("ably-auth/", views.ably_auth, name="ably_auth"),
+
     path("messages/<int:message_id>/report/", views.report_message, name="report_message"),
 
     path("chat/<int:conversation_id>/", views.conversation_view, name="conversation"),

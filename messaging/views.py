@@ -1,8 +1,6 @@
 import json
 from datetime import timedelta
 
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login
@@ -10,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.db import transaction
 from django.db.models import Count
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -24,6 +22,7 @@ from .models import (
     Report,
     SignupAttempt,
 )
+from . import realtime
 from .utils import (
     blocked_ids_for,
     client_ip,
@@ -344,6 +343,7 @@ def conversation_view(request, conversation_id):
             "conversation_name": conversation.display_name_for(request.user),
             "chat_messages": recent,
             "blocked_ids": sorted(blocked),
+            "realtime": realtime.enabled(),
         }
     )
 
@@ -443,16 +443,9 @@ def send_message(request, conversation_id):
         "created_at": message.created_at.isoformat(),
     }
 
-    try:
-        layer = get_channel_layer()
-
-        async_to_sync(layer.group_send)(
-            f"chat_{conversation_id}",
-            {"type": "chat_message", **payload}
-        )
-    except Exception:
-        # The message is saved; other viewers will catch up on reconnect.
-        pass
+    # Push to everyone in the room. If this fails the message is still
+    # saved, and other browsers pick it up on their next catch-up.
+    realtime.publish(conversation_id, payload)
 
     return JsonResponse(payload)
 
@@ -550,3 +543,29 @@ def report_message(request, message_id):
     )
 
     return JsonResponse({"ok": True})
+
+
+@login_required
+def ably_auth(request):
+    """Gives the browser a short-lived token to subscribe to one room."""
+
+    conversation_id = request.GET.get("conversation", "")
+
+    if not conversation_id.isdigit():
+        return HttpResponse(status=400)
+
+    get_object_or_404(
+        Membership,
+        conversation_id=int(conversation_id),
+        user=request.user
+    )
+
+    token = realtime.make_subscribe_token(
+        request.user.pk,
+        int(conversation_id)
+    )
+
+    if not token:
+        return HttpResponse(status=503)
+
+    return HttpResponse(token, content_type="text/plain")
