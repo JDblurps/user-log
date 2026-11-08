@@ -1,0 +1,4174 @@
+
+==================================================
+FILE: ./.DS_Store
+==================================================
+[Binary file - contents skipped]
+
+
+==================================================
+FILE: ./.env
+==================================================
+DJANGO_SECRET_KEY=seth@3706ismypassword
+DJANGO_DEBUG=1
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
+
+DATABASE_URL=postgresql://neondb_owner:npg_dqkR3HiDZVW0@ep-red-smoke-zad0j9t0-pooler.c-2.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+
+#REDIS_URL=redis://127.0.0.1:6379/0
+
+==================================================
+FILE: ./.env.example
+==================================================
+# Copy this file to .env for local dev. Never commit .env.
+DJANGO_SECRET_KEY=change-me-to-a-long-random-string
+DJANGO_DEBUG=1
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,.vercel.app
+DJANGO_CSRF_TRUSTED_ORIGINS=https://*.vercel.app
+
+# Neon pooled connection string (host contains -pooler)
+DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxx-pooler.REGION.aws.neon.tech/DBNAME?sslmode=require
+
+# Ably API key (server only, never put it in front-end code).
+# Leave commented out locally to use polling instead of realtime.
+# ABLY_API_KEY=appId.keyId:keySecret
+
+# Optional: Cloudflare Turnstile bot protection on signup (free).
+# TURNSTILE_SITE_KEY=
+# TURNSTILE_SECRET_KEY=
+
+
+==================================================
+FILE: ./.gitignore
+==================================================
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+db.sqlite3
+staticfiles/
+.DS_Store
+
+==================================================
+FILE: ./README.md
+==================================================
+# SimpleChat
+
+A real-time messaging application built with Django.
+
+## Features
+
+- User registration
+- Login and logout
+- Private conversations
+- Group conversations
+- Real-time messaging
+- PostgreSQL database
+- Redis channel layer
+- Django Channels
+- Responsive interface
+
+## Requirements
+
+- Python 3
+- Docker Desktop
+- VS Code (recommended)
+
+## Installation
+
+1. Install Python 3.
+2. Install Docker Desktop.
+3. Open the project folder in Terminal.
+4. Run:
+
+```bash
+chmod +x setup_mac.command
+./setup_mac.command
+
+==================================================
+FILE: ./ably_update.zip
+==================================================
+[Binary file - contents skipped]
+
+
+==================================================
+FILE: ./config/__init__.py
+==================================================
+
+
+==================================================
+FILE: ./config/asgi.py
+==================================================
+import os
+
+from django.core.asgi import get_asgi_application
+
+os.environ.setdefault(
+    "DJANGO_SETTINGS_MODULE",
+    "config.settings"
+)
+
+application = get_asgi_application()
+
+
+==================================================
+FILE: ./config/settings.py
+==================================================
+import os
+from pathlib import Path
+
+import dj_database_url
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # python-dotenv is only needed for local dev
+    load_dotenv = None
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+if load_dotenv:
+    load_dotenv(BASE_DIR / ".env")
+
+
+def env_list(name, default=""):
+    return [x.strip() for x in os.getenv(name, default).split(",") if x.strip()]
+
+
+# On Vercel the VERCEL env var is set, so DEBUG defaults to off there.
+DEBUG = os.getenv("DJANGO_DEBUG", "0" if os.getenv("VERCEL") else "1") == "1"
+
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-change-me")
+if not DEBUG and SECRET_KEY == "dev-only-change-me":
+    raise RuntimeError("Set DJANGO_SECRET_KEY when DEBUG is off.")
+
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,.vercel.app")
+CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "https://*.vercel.app")
+
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+
+    "messaging",
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "config.urls"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [BASE_DIR / "templates"],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
+
+
+# PostgreSQL (Neon). Reads DATABASE_URL from the environment.
+# Serverless: don't keep connections open, and stay compatible with
+# Neon's pooled (pgbouncer) connections.
+
+DATABASES = {
+    "default": dj_database_url.config(
+        default="postgres://chatapp:chatapp_dev_password@127.0.0.1:5432/chatapp",
+        conn_max_age=0,
+    )
+}
+DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
+
+
+# Realtime (Ably). Messages are sent over HTTP and pushed to browsers by Ably.
+# Without a key the site still works: browsers just poll every few seconds.
+
+ABLY_API_KEY = os.getenv("ABLY_API_KEY", "").strip().strip("\"'")
+
+
+# Password validation
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+
+# General settings
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_TZ = True
+
+
+# Static files
+
+STATIC_URL = "static/"
+STATICFILES_DIRS = [BASE_DIR / "static"]
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Authentication
+
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "inbox"
+LOGOUT_REDIRECT_URL = "login"
+
+
+# Cloudflare Turnstile (optional bot protection on signup).
+# Leave both unset to disable it.
+
+TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "")
+
+
+# Production security
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
+
+==================================================
+FILE: ./config/urls.py
+==================================================
+from django.contrib import admin
+from django.urls import path, include
+from django.contrib.auth import views as auth_views
+
+from messaging.views import register_view
+
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+
+    path(
+        "accounts/register/",
+        register_view,
+        name="register"
+    ),
+
+    path(
+        "accounts/login/",
+        auth_views.LoginView.as_view(
+            template_name="registration/login.html"
+        ),
+        name="login"
+    ),
+
+    path(
+        "accounts/logout/",
+        auth_views.LogoutView.as_view(),
+        name="logout"
+    ),
+
+    path("", include("messaging.urls")),
+]
+
+
+==================================================
+FILE: ./config/wsgi.py
+==================================================
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+
+application = get_wsgi_application()
+
+
+==================================================
+FILE: ./docker-compose.yml
+==================================================
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: chatapp
+      POSTGRES_USER: chatapp
+      POSTGRES_PASSWORD: chatapp_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatapp -d chatapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+
+==================================================
+FILE: ./manage.py
+==================================================
+#!/usr/bin/env python3
+
+import os
+import sys
+
+if __name__ == "__main__":
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+
+    from django.core.management import execute_from_command_line
+
+    execute_from_command_line(sys.argv)
+
+==================================================
+FILE: ./messaging/.DS_Store
+==================================================
+[Binary file - contents skipped]
+
+
+==================================================
+FILE: ./messaging/__init__.py
+==================================================
+
+
+==================================================
+FILE: ./messaging/admin.py
+==================================================
+from django.contrib import admin
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin
+
+from .models import (
+    Block,
+    Conversation,
+    Membership,
+    Message,
+    Profile,
+    Report,
+    SignupAttempt,
+)
+
+
+User = get_user_model()
+
+admin.site.site_header = "SimpleChat Admin"
+admin.site.site_title = "SimpleChat Admin"
+admin.site.index_title = "Moderation and community"
+
+
+# ---- Users: ban / unban ----
+
+admin.site.unregister(User)
+
+
+@admin.register(User)
+class ChatUserAdmin(UserAdmin):
+
+    list_display = (
+        "username", "is_active", "is_staff", "date_joined", "last_login"
+    )
+
+    list_filter = ("is_active", "is_staff")
+
+    actions = ["ban_users", "unban_users"]
+
+    @admin.action(description="Ban selected users (they can no longer log in)")
+    def ban_users(self, request, queryset):
+
+        count = queryset.exclude(is_superuser=True).update(is_active=False)
+
+        self.message_user(request, f"{count} user(s) banned.")
+
+    @admin.action(description="Unban selected users")
+    def unban_users(self, request, queryset):
+
+        count = queryset.update(is_active=True)
+
+        self.message_user(request, f"{count} user(s) unbanned.")
+
+
+# ---- Reports ----
+
+@admin.register(Report)
+class ReportAdmin(admin.ModelAdmin):
+
+    list_display = (
+        "id", "status", "reporter", "reported_user",
+        "short_body", "reason", "created_at"
+    )
+
+    list_filter = ("status",)
+
+    search_fields = (
+        "reporter__username", "reported_user__username",
+        "message_body", "reason"
+    )
+
+    actions = [
+        "mark_resolved",
+        "ban_reported_users",
+        "delete_reported_messages",
+    ]
+
+    @admin.display(description="Message")
+    def short_body(self, obj):
+
+        return obj.message_body[:60]
+
+    @admin.action(description="Mark selected reports as resolved")
+    def mark_resolved(self, request, queryset):
+
+        count = queryset.update(status=Report.STATUS_RESOLVED)
+
+        self.message_user(request, f"{count} report(s) resolved.")
+
+    @admin.action(description="Ban the reported users and resolve")
+    def ban_reported_users(self, request, queryset):
+
+        user_ids = list(
+            queryset
+            .exclude(reported_user__isnull=True)
+            .values_list("reported_user_id", flat=True)
+        )
+
+        banned = (
+            User.objects
+            .filter(pk__in=user_ids)
+            .exclude(is_superuser=True)
+            .update(is_active=False)
+        )
+
+        queryset.update(status=Report.STATUS_RESOLVED)
+
+        self.message_user(request, f"{banned} user(s) banned.")
+
+    @admin.action(description="Delete the reported messages and resolve")
+    def delete_reported_messages(self, request, queryset):
+
+        message_ids = list(
+            queryset
+            .exclude(message__isnull=True)
+            .values_list("message_id", flat=True)
+        )
+
+        Message.objects.filter(pk__in=message_ids).delete()
+
+        queryset.update(status=Report.STATUS_RESOLVED)
+
+        self.message_user(request, "Reported messages deleted.")
+
+
+# ---- Everything else ----
+
+@admin.register(Message)
+class MessageAdmin(admin.ModelAdmin):
+
+    list_display = ("id", "sender", "conversation", "short_body", "created_at")
+
+    search_fields = ("body", "sender__username")
+
+    @admin.display(description="Body")
+    def short_body(self, obj):
+
+        return obj.body[:60]
+
+
+@admin.register(Conversation)
+class ConversationAdmin(admin.ModelAdmin):
+
+    list_display = ("id", "title", "is_group", "is_default", "created_at")
+
+
+admin.site.register(Membership)
+admin.site.register(Block)
+admin.site.register(SignupAttempt)
+admin.site.register(Profile)
+
+
+==================================================
+FILE: ./messaging/apps.py
+==================================================
+from django.apps import AppConfig
+
+
+class MessagingConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "messaging"
+
+
+==================================================
+FILE: ./messaging/avatars.py
+==================================================
+"""Preset colors and avatars, plus helpers to describe a user's look."""
+
+COLORS = [
+    "#4f46e5", "#7c3aed", "#c026d3", "#db2777",
+    "#dc2626", "#ea580c", "#d97706", "#65a30d",
+    "#16a34a", "#0d9488", "#0891b2", "#2563eb",
+]
+
+AVATARS = [
+    "😀", "😎", "🤓", "🥳", "😺", "🐶",
+    "🦊", "🐼", "🐸", "🦄", "🐙", "🦁",
+    "🐧", "🦉", "🌵", "🌈", "🔥", "⚡",
+    "🚀", "👾", "🎮", "🎧", "🍕", "🍩",
+]
+
+
+def avatar_info(user):
+    """Color, emoji (or '') and initial for a user. Never raises, and works
+    for users who never customized anything."""
+
+    profile = getattr(user, "profile", None)
+
+    color = profile.color if profile and profile.color else ""
+
+    if color not in COLORS:
+        color = COLORS[user.pk % len(COLORS)]
+
+    emoji = profile.avatar if profile and profile.avatar in AVATARS else ""
+
+    initial = (user.username[:1] or "?").upper()
+
+    return {"color": color, "emoji": emoji, "initial": initial}
+
+
+def avatar_payload(user):
+    """The same info, shaped for the JSON that goes to browsers."""
+
+    info = avatar_info(user)
+
+    return {
+        "sender_color": info["color"],
+        "sender_avatar": info["emoji"],
+        "sender_initial": info["initial"],
+    }
+
+
+==================================================
+FILE: ./messaging/forms.py
+==================================================
+from django import forms
+
+from .models import Conversation, Membership
+
+
+class GroupForm(forms.Form):
+
+    title = forms.CharField(
+        max_length=120,
+
+        widget=forms.TextInput(
+            attrs={
+                "class": "field",
+                "placeholder": "Group name"
+            }
+        ),
+
+        help_text="Groups are open: anyone on the site can find and join them."
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+
+        super().__init__(*args, **kwargs)
+
+        self.user = user
+
+    def save(self):
+
+        conversation = Conversation.objects.create(
+            title=self.cleaned_data["title"].strip(),
+            is_group=True,
+            created_by=self.user
+        )
+
+        Membership.objects.create(
+            conversation=conversation,
+            user=self.user
+        )
+
+        return conversation
+
+
+==================================================
+FILE: ./messaging/management/__init__.py
+==================================================
+
+
+==================================================
+FILE: ./messaging/management/commands/__init__.py
+==================================================
+
+
+==================================================
+FILE: ./messaging/management/commands/bootstrap_general.py
+==================================================
+from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand
+
+from messaging.models import Membership
+from messaging.utils import get_general_room
+
+
+class Command(BaseCommand):
+
+    help = (
+        "Create the General room (if missing) and add every active user "
+        "to it. Safe to run more than once."
+    )
+
+    def handle(self, *args, **options):
+
+        room = get_general_room()
+
+        existing = set(
+            Membership.objects
+            .filter(conversation=room)
+            .values_list("user_id", flat=True)
+        )
+
+        User = get_user_model()
+
+        new = [
+            Membership(conversation=room, user_id=user_id)
+            for user_id in User.objects
+            .filter(is_active=True)
+            .values_list("id", flat=True)
+            if user_id not in existing
+        ]
+
+        Membership.objects.bulk_create(new)
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"General room ready. Added {len(new)} user(s)."
+            )
+        )
+
+
+==================================================
+FILE: ./messaging/migrations/0001_initial.py
+==================================================
+# Generated by Django 5.2.19 on 2026-11-06 21:36
+
+import django.db.models.deletion
+import django.utils.timezone
+from django.conf import settings
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Conversation',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('title', models.CharField(blank=True, max_length=120)),
+                ('is_group', models.BooleanField(default=False)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('created_by', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='created_conversations', to=settings.AUTH_USER_MODEL)),
+            ],
+        ),
+        migrations.CreateModel(
+            name='Message',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('body', models.TextField(max_length=4000)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('conversation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='messaging.conversation')),
+                ('sender', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='sent_messages', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'ordering': ['created_at'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Membership',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('joined_at', models.DateTimeField(auto_now_add=True)),
+                ('last_read_at', models.DateTimeField(default=django.utils.timezone.now)),
+                ('conversation', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='members', to='messaging.conversation')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='chat_memberships', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'constraints': [models.UniqueConstraint(fields=('conversation', 'user'), name='unique_conversation_member')],
+            },
+        ),
+    ]
+
+
+==================================================
+FILE: ./messaging/migrations/0002_signupattempt_conversation_is_default_report_block.py
+==================================================
+# Generated by Django 5.2.19 on 2026-11-07 09:16
+
+import django.db.models.deletion
+from django.conf import settings
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('messaging', '0001_initial'),
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='SignupAttempt',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('ip', models.CharField(db_index=True, max_length=64)),
+                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
+            ],
+        ),
+        migrations.AddField(
+            model_name='conversation',
+            name='is_default',
+            field=models.BooleanField(default=False),
+        ),
+        migrations.CreateModel(
+            name='Report',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('message_body', models.TextField(blank=True)),
+                ('reason', models.CharField(blank=True, max_length=500)),
+                ('status', models.CharField(choices=[('open', 'Open'), ('resolved', 'Resolved')], default='open', max_length=10)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('message', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='reports', to='messaging.message')),
+                ('reported_user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='reports_received', to=settings.AUTH_USER_MODEL)),
+                ('reporter', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='reports_made', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'ordering': ['-created_at'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Block',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('blocked', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='blocks_received', to=settings.AUTH_USER_MODEL)),
+                ('blocker', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='blocks_made', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'constraints': [models.UniqueConstraint(fields=('blocker', 'blocked'), name='unique_block')],
+            },
+        ),
+    ]
+
+
+==================================================
+FILE: ./messaging/migrations/0003_profile.py
+==================================================
+# Generated by Django 5.2.19 on 2026-11-08 08:19
+
+import django.db.models.deletion
+from django.conf import settings
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('messaging', '0002_signupattempt_conversation_is_default_report_block'),
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Profile',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('color', models.CharField(blank=True, max_length=7)),
+                ('avatar', models.CharField(blank=True, max_length=16)),
+                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='profile', to=settings.AUTH_USER_MODEL)),
+            ],
+        ),
+    ]
+
+
+==================================================
+FILE: ./messaging/migrations/__init__.py
+==================================================
+
+
+==================================================
+FILE: ./messaging/models.py
+==================================================
+from django.conf import settings
+from django.db import models
+from django.utils import timezone
+
+
+class Conversation(models.Model):
+
+    title = models.CharField(
+        max_length=120,
+        blank=True
+    )
+
+    is_group = models.BooleanField(default=False)
+
+    # The group every new user is added to automatically (the "General" room).
+    is_default = models.BooleanField(default=False)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="created_conversations"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    def display_name_for(self, user):
+
+        if self.is_group:
+            return self.title or "Group chat"
+
+        other = (
+            self.members
+            .exclude(user=user)
+            .select_related("user")
+            .first()
+        )
+
+        return other.user.username if other else "Direct chat"
+
+    def __str__(self):
+
+        return self.title or f"Conversation {self.pk}"
+
+
+class Membership(models.Model):
+
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name="members"
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="chat_memberships"
+    )
+
+    joined_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    last_read_at = models.DateTimeField(
+        default=timezone.now
+    )
+
+    class Meta:
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conversation", "user"],
+                name="unique_conversation_member"
+            )
+        ]
+
+
+class Message(models.Model):
+
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name="messages"
+    )
+
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sent_messages"
+    )
+
+    body = models.TextField(max_length=4000)
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+
+        ordering = ["created_at"]
+
+    def __str__(self):
+
+        return f"{self.sender.username}: {self.body[:40]}"
+
+
+class Block(models.Model):
+    """`blocker` doesn't want to see or hear from `blocked`."""
+
+    blocker = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="blocks_made"
+    )
+
+    blocked = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="blocks_received"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["blocker", "blocked"],
+                name="unique_block"
+            )
+        ]
+
+    def __str__(self):
+
+        return f"{self.blocker} blocked {self.blocked}"
+
+
+class Report(models.Model):
+
+    STATUS_OPEN = "open"
+    STATUS_RESOLVED = "resolved"
+
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Open"),
+        (STATUS_RESOLVED, "Resolved"),
+    ]
+
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reports_made"
+    )
+
+    reported_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports_received"
+    )
+
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports"
+    )
+
+    # Snapshot, so the evidence survives if the message is deleted.
+    message_body = models.TextField(blank=True)
+
+    reason = models.CharField(max_length=500, blank=True)
+
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default=STATUS_OPEN
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+
+        ordering = ["-created_at"]
+
+    def __str__(self):
+
+        return f"Report #{self.pk} ({self.status})"
+
+
+class SignupAttempt(models.Model):
+    """One row per successful signup, used to limit signups per IP."""
+
+    ip = models.CharField(max_length=64, db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+
+class Profile(models.Model):
+    """Optional look customization. Users without one get defaults."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="profile"
+    )
+
+    # One of messaging.avatars.COLORS (empty = automatic color).
+    color = models.CharField(max_length=7, blank=True)
+
+    # One of messaging.avatars.AVATARS (empty = use the initial).
+    avatar = models.CharField(max_length=16, blank=True)
+
+    def __str__(self):
+
+        return f"Profile of {self.user}"
+
+
+==================================================
+FILE: ./messaging/realtime.py
+==================================================
+"""Ably helpers: sign browser tokens and publish messages.
+
+The API key (settings.ABLY_API_KEY) stays on the server. Browsers only ever
+receive short-lived tokens that allow them to *subscribe* to one room.
+"""
+
+import base64
+import hashlib
+import hmac
+import json
+import time
+from urllib.request import Request, urlopen
+
+from django.conf import settings
+
+
+TOKEN_TTL_SECONDS = 3600
+
+
+def enabled():
+
+    return bool(getattr(settings, "ABLY_API_KEY", ""))
+
+
+def channel_name(conversation_id):
+
+    return f"chat-{conversation_id}"
+
+
+def _b64url(data):
+
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def make_subscribe_token(user_id, conversation_id):
+    """An Ably JWT that can only subscribe to this one room."""
+
+    key = getattr(settings, "ABLY_API_KEY", "")
+
+    if ":" not in key:
+        return None
+
+    key_name, secret = key.split(":", 1)
+
+    now = int(time.time())
+
+    header = {"typ": "JWT", "alg": "HS256", "kid": key_name}
+
+    claims = {
+        "iat": now,
+        "exp": now + TOKEN_TTL_SECONDS,
+        "x-ably-capability": json.dumps(
+            {channel_name(conversation_id): ["subscribe"]}
+        ),
+        "x-ably-clientId": str(user_id),
+    }
+
+    signing_input = (
+        _b64url(json.dumps(header, separators=(",", ":")).encode())
+        + "."
+        + _b64url(json.dumps(claims, separators=(",", ":")).encode())
+    )
+
+    signature = hmac.new(
+        secret.encode(),
+        signing_input.encode(),
+        hashlib.sha256
+    ).digest()
+
+    return signing_input + "." + _b64url(signature)
+
+
+def publish(conversation_id, payload):
+    """Publish a message to the room. Returns True on success."""
+
+    key = getattr(settings, "ABLY_API_KEY", "")
+
+    if not key:
+        return False
+
+    body = json.dumps({
+        "name": "message",
+        "data": json.dumps(payload),
+    }).encode()
+
+    auth = base64.b64encode(key.encode()).decode()
+
+    request = Request(
+        f"https://rest.ably.io/channels/{channel_name(conversation_id)}/messages",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Basic {auth}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=4) as response:
+            response.read()
+        return True
+    except Exception:
+        return False
+
+
+==================================================
+FILE: ./messaging/templatetags/__init__.py
+==================================================
+
+
+==================================================
+FILE: ./messaging/templatetags/chat_extras.py
+==================================================
+from django import template
+from django.utils.html import format_html
+
+from messaging.avatars import avatar_info
+
+
+register = template.Library()
+
+
+@register.simple_tag
+def avatar(user, size=42):
+    """A round avatar: the user's emoji, or their initial, on their color."""
+
+    info = avatar_info(user)
+
+    size = int(size)
+
+    return format_html(
+        '<div class="avatar" style="background:{};color:#fff;'
+        'width:{}px;height:{}px;font-size:{}px">{}</div>',
+        info["color"],
+        size,
+        size,
+        max(10, round(size * 0.5)),
+        info["emoji"] or info["initial"],
+    )
+
+
+==================================================
+FILE: ./messaging/urls.py
+==================================================
+from django.urls import path
+
+from . import views
+
+
+urlpatterns = [
+
+    path("", views.inbox, name="inbox"),
+
+    path("people/", views.people, name="people"),
+    path("people/<int:user_id>/message/", views.start_dm, name="start_dm"),
+
+    path("groups/", views.groups, name="groups"),
+    path("groups/new/", views.new_conversation, name="new_conversation"),
+    path("groups/<int:conversation_id>/join/", views.join_group, name="join_group"),
+    path("groups/<int:conversation_id>/leave/", views.leave_group, name="leave_group"),
+
+    path("people/<int:user_id>/block/", views.block_user, name="block_user"),
+    path("people/<int:user_id>/unblock/", views.unblock_user, name="unblock_user"),
+    path("blocked/", views.blocked_list, name="blocked"),
+
+    path("profile/", views.profile_view, name="profile"),
+
+    path("ably-auth/", views.ably_auth, name="ably_auth"),
+
+    path("messages/<int:message_id>/report/", views.report_message, name="report_message"),
+
+    path("chat/<int:conversation_id>/", views.conversation_view, name="conversation"),
+    path(
+        "chat/<int:conversation_id>/send/",
+        views.send_message,
+        name="send_message"
+    ),
+    path(
+        "chat/<int:conversation_id>/since/<int:last_id>/",
+        views.messages_since,
+        name="messages_since"
+    ),
+
+]
+
+
+==================================================
+FILE: ./messaging/utils.py
+==================================================
+import json
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+from django.conf import settings
+from django.db.models import Q
+
+from .models import Block, Conversation, Membership
+
+
+def client_ip(request):
+
+    real = request.META.get("HTTP_X_REAL_IP", "").strip()
+
+    if real:
+        return real[:64]
+
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+
+    return request.META.get("REMOTE_ADDR", "")[:64]
+
+
+def verify_turnstile(request):
+    """Cloudflare Turnstile check. Skipped when no secret key is configured."""
+
+    secret = getattr(settings, "TURNSTILE_SECRET_KEY", "")
+
+    if not secret:
+        return True
+
+    token = request.POST.get("cf-turnstile-response", "")
+
+    if not token:
+        return False
+
+    data = urlencode({
+        "secret": secret,
+        "response": token,
+        "remoteip": client_ip(request),
+    }).encode()
+
+    try:
+        with urlopen(
+            Request(
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                data=data
+            ),
+            timeout=5
+        ) as response:
+            return json.load(response).get("success") is True
+    except Exception:
+        return False
+
+
+def blocked_ids_for(user):
+    """IDs of people `user` has blocked."""
+
+    return set(
+        Block.objects
+        .filter(blocker=user)
+        .values_list("blocked_id", flat=True)
+    )
+
+
+def is_blocked_between(a_id, b_id):
+    """True if either person has blocked the other."""
+
+    return Block.objects.filter(
+        Q(blocker_id=a_id, blocked_id=b_id)
+        | Q(blocker_id=b_id, blocked_id=a_id)
+    ).exists()
+
+
+def get_general_room():
+
+    room = Conversation.objects.filter(is_default=True).first()
+
+    if room is None:
+        room = Conversation.objects.create(
+            title="General",
+            is_group=True,
+            is_default=True
+        )
+
+    return room
+
+
+def join_default_rooms(user):
+
+    Membership.objects.get_or_create(
+        conversation=get_general_room(),
+        user=user
+    )
+
+
+==================================================
+FILE: ./messaging/views.py
+==================================================
+import json
+from datetime import timedelta
+
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import get_user_model, login
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
+from django.db import transaction
+from django.db.models import Count
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_POST
+
+from .forms import GroupForm
+from .models import (
+    Block,
+    Conversation,
+    Membership,
+    Message,
+    Profile,
+    Report,
+    SignupAttempt,
+)
+from . import realtime
+from .avatars import AVATARS, COLORS, avatar_info, avatar_payload
+from .utils import (
+    blocked_ids_for,
+    client_ip,
+    is_blocked_between,
+    join_default_rooms,
+    verify_turnstile,
+)
+
+
+User = get_user_model()
+
+HISTORY_LIMIT = 200
+LIST_LIMIT = 100
+
+
+SIGNUPS_PER_IP_PER_HOUR = 5
+
+
+def register_view(request):
+
+    if request.user.is_authenticated:
+        return redirect("inbox")
+
+    form = UserCreationForm(request.POST or None)
+
+    if request.method == "POST":
+
+        ip = client_ip(request)
+
+        too_many = SignupAttempt.objects.filter(
+            ip=ip,
+            created_at__gte=timezone.now() - timedelta(hours=1)
+        ).count() >= SIGNUPS_PER_IP_PER_HOUR
+
+        if too_many:
+
+            messages.error(
+                request,
+                "Too many accounts were created from your network. "
+                "Please try again later."
+            )
+
+        elif not verify_turnstile(request):
+
+            messages.error(
+                request,
+                "Please complete the verification and try again."
+            )
+
+        elif form.is_valid():
+
+            user = form.save()
+
+            SignupAttempt.objects.create(ip=ip)
+
+            join_default_rooms(user)
+
+            login(request, user)
+
+            return redirect("inbox")
+
+    return render(
+        request,
+        "registration/register.html",
+        {
+            "form": form,
+            "turnstile_site_key": settings.TURNSTILE_SITE_KEY,
+        }
+    )
+
+
+@login_required
+def inbox(request):
+
+    memberships = (
+        Membership.objects
+        .filter(user=request.user)
+        .select_related("conversation")
+        .order_by("-conversation__created_at")
+    )
+
+    chats = []
+
+    for membership in memberships:
+
+        conversation = membership.conversation
+
+        latest = (
+            conversation.messages
+            .select_related("sender")
+            .last()
+        )
+
+        unread = (
+            conversation.messages
+            .filter(created_at__gt=membership.last_read_at)
+            .exclude(sender=request.user)
+            .count()
+        )
+
+        other_user = None
+
+        if not conversation.is_group:
+
+            other = (
+                conversation.members
+                .exclude(user=request.user)
+                .select_related("user__profile")
+                .first()
+            )
+
+            other_user = other.user if other else None
+
+        chats.append({
+            "conversation": conversation,
+            "name": conversation.display_name_for(request.user),
+            "latest": latest,
+            "unread": unread,
+            "other_user": other_user,
+        })
+
+    return render(request, "messaging/inbox.html", {"chats": chats})
+
+
+# ---------- People directory + direct messages ----------
+
+@login_required
+def people(request):
+
+    q = request.GET.get("q", "").strip()
+
+    users = (
+        User.objects
+        .filter(is_active=True)
+        .exclude(pk=request.user.pk)
+        .select_related("profile")
+    )
+
+    if q:
+        users = users.filter(username__icontains=q)
+
+    users = users.order_by("username")[:LIST_LIMIT]
+
+    return render(
+        request,
+        "messaging/people.html",
+        {"people": users, "q": q}
+    )
+
+
+@login_required
+@require_POST
+def start_dm(request, user_id):
+
+    other = get_object_or_404(User, pk=user_id, is_active=True)
+
+    if other.pk == request.user.pk:
+        return redirect("inbox")
+
+    if is_blocked_between(request.user.pk, other.pk):
+
+        messages.error(request, "You can't message this person.")
+
+        return redirect("people")
+
+    with transaction.atomic():
+
+        candidates = (
+            Conversation.objects
+            .filter(is_group=False, members__user=request.user)
+            .filter(members__user=other)
+            .distinct()
+        )
+
+        conversation = None
+
+        for candidate in candidates:
+            if candidate.members.count() == 2:
+                conversation = candidate
+                break
+
+        if conversation is None:
+
+            conversation = Conversation.objects.create(
+                is_group=False,
+                created_by=request.user
+            )
+
+            Membership.objects.create(
+                conversation=conversation,
+                user=request.user
+            )
+
+            Membership.objects.create(
+                conversation=conversation,
+                user=other
+            )
+
+    return redirect("conversation", conversation_id=conversation.pk)
+
+
+# ---------- Open groups ----------
+
+@login_required
+def groups(request):
+
+    q = request.GET.get("q", "").strip()
+
+    qs = (
+        Conversation.objects
+        .filter(is_group=True)
+        .annotate(member_count=Count("members"))
+    )
+
+    if q:
+        qs = qs.filter(title__icontains=q)
+
+    qs = qs.order_by("-member_count", "title")[:LIST_LIMIT]
+
+    my_ids = set(
+        Membership.objects
+        .filter(user=request.user)
+        .values_list("conversation_id", flat=True)
+    )
+
+    return render(
+        request,
+        "messaging/groups.html",
+        {"groups": qs, "my_ids": my_ids, "q": q}
+    )
+
+
+@login_required
+def new_conversation(request):
+    """Create a new (open) group."""
+
+    form = GroupForm(request.POST or None, user=request.user)
+
+    if request.method == "POST" and form.is_valid():
+
+        conversation = form.save()
+
+        return redirect("conversation", conversation_id=conversation.pk)
+
+    return render(
+        request,
+        "messaging/new_conversation.html",
+        {"form": form}
+    )
+
+
+@login_required
+@require_POST
+def join_group(request, conversation_id):
+
+    conversation = get_object_or_404(
+        Conversation,
+        pk=conversation_id,
+        is_group=True
+    )
+
+    Membership.objects.get_or_create(
+        conversation=conversation,
+        user=request.user
+    )
+
+    return redirect("conversation", conversation_id=conversation.pk)
+
+
+@login_required
+@require_POST
+def leave_group(request, conversation_id):
+
+    Membership.objects.filter(
+        conversation_id=conversation_id,
+        conversation__is_group=True,
+        user=request.user
+    ).delete()
+
+    return redirect("inbox")
+
+
+# ---------- Conversation ----------
+
+@login_required
+def conversation_view(request, conversation_id):
+
+    conversation = get_object_or_404(
+        Conversation,
+        pk=conversation_id,
+        members__user=request.user
+    )
+
+    membership = get_object_or_404(
+        Membership,
+        conversation=conversation,
+        user=request.user
+    )
+
+    if request.method == "POST":
+
+        body = request.POST.get("body", "").strip()
+
+        if body and len(body) <= 4000:
+
+            Message.objects.create(
+                conversation=conversation,
+                sender=request.user,
+                body=body
+            )
+
+        return redirect("conversation", conversation_id=conversation.pk)
+
+    membership.last_read_at = timezone.now()
+    membership.save(update_fields=["last_read_at"])
+
+    blocked = blocked_ids_for(request.user)
+
+    recent = list(
+        conversation.messages
+        .select_related("sender__profile")
+        .exclude(sender_id__in=blocked)
+        .order_by("-created_at")[:HISTORY_LIMIT]
+    )
+
+    recent.reverse()
+
+    return render(
+        request,
+        "messaging/conversation.html",
+        {
+            "conversation": conversation,
+            "conversation_name": conversation.display_name_for(request.user),
+            "chat_messages": recent,
+            "blocked_ids": sorted(blocked),
+            "realtime": realtime.enabled(),
+        }
+    )
+
+
+@login_required
+def messages_since(request, conversation_id, last_id):
+    """Messages newer than last_id. Used by the browser to catch up
+    after the WebSocket reconnects."""
+
+    get_object_or_404(
+        Membership,
+        conversation_id=conversation_id,
+        user=request.user
+    )
+
+    msgs = (
+        Message.objects
+        .filter(conversation_id=conversation_id, id__gt=last_id)
+        .exclude(sender_id__in=blocked_ids_for(request.user))
+        .select_related("sender__profile")
+        .order_by("id")[:HISTORY_LIMIT]
+    )
+
+    return JsonResponse({
+        "messages": [
+            {
+                "id": m.id,
+                "body": m.body,
+                "sender": m.sender.username,
+                "sender_id": m.sender_id,
+                "created_at": m.created_at.isoformat(),
+                **avatar_payload(m.sender),
+            }
+            for m in msgs
+        ]
+    })
+
+
+@login_required
+@require_POST
+def send_message(request, conversation_id):
+    """Save a message and broadcast it to the room.
+
+    The browser sends messages here over plain HTTP so a send never
+    silently disappears if the WebSocket happens to be reconnecting.
+    The WebSocket is only used to receive.
+    """
+
+    get_object_or_404(
+        Membership,
+        conversation_id=conversation_id,
+        user=request.user
+    )
+
+    conversation = get_object_or_404(Conversation, pk=conversation_id)
+
+    if not conversation.is_group:
+
+        other = (
+            Membership.objects
+            .filter(conversation=conversation)
+            .exclude(user=request.user)
+            .first()
+        )
+
+        if other and is_blocked_between(request.user.pk, other.user_id):
+            return JsonResponse({"error": "blocked"}, status=403)
+
+    try:
+        data = json.loads(request.body)
+        body = str(data.get("body", "")).strip()
+    except (ValueError, AttributeError):
+        return JsonResponse({"error": "bad request"}, status=400)
+
+    if not body or len(body) > 4000:
+        return JsonResponse({"error": "invalid message"}, status=400)
+
+    # Basic flood protection: one message per half second per user.
+    too_fast = Message.objects.filter(
+        sender=request.user,
+        created_at__gte=timezone.now() - timedelta(milliseconds=500)
+    ).exists()
+
+    if too_fast:
+        return JsonResponse({"error": "slow down"}, status=429)
+
+    message = Message.objects.create(
+        conversation_id=conversation_id,
+        sender=request.user,
+        body=body
+    )
+
+    payload = {
+        "id": message.id,
+        "body": message.body,
+        "sender": request.user.username,
+        "sender_id": request.user.id,
+        "created_at": message.created_at.isoformat(),
+        **avatar_payload(request.user),
+    }
+
+    # Push to everyone in the room. If this fails the message is still
+    # saved, and other browsers pick it up on their next catch-up.
+    realtime.publish(conversation_id, payload)
+
+    return JsonResponse(payload)
+
+
+# ---------- Blocking and reporting ----------
+
+@login_required
+@require_POST
+def block_user(request, user_id):
+
+    target = get_object_or_404(User, pk=user_id)
+
+    if target.pk != request.user.pk:
+
+        Block.objects.get_or_create(
+            blocker=request.user,
+            blocked=target
+        )
+
+    return JsonResponse({"ok": True})
+
+
+@login_required
+@require_POST
+def unblock_user(request, user_id):
+
+    Block.objects.filter(
+        blocker=request.user,
+        blocked_id=user_id
+    ).delete()
+
+    return redirect("blocked")
+
+
+@login_required
+def blocked_list(request):
+
+    blocks = (
+        Block.objects
+        .filter(blocker=request.user)
+        .select_related("blocked__profile")
+        .order_by("blocked__username")
+    )
+
+    return render(
+        request,
+        "messaging/blocked.html",
+        {"blocks": blocks}
+    )
+
+
+REPORTS_PER_HOUR = 20
+
+
+@login_required
+@require_POST
+def report_message(request, message_id):
+
+    message = get_object_or_404(
+        Message.objects.select_related("sender"),
+        pk=message_id
+    )
+
+    # You can only report messages from rooms you are in.
+    get_object_or_404(
+        Membership,
+        conversation_id=message.conversation_id,
+        user=request.user
+    )
+
+    if message.sender_id == request.user.id:
+        return JsonResponse({"error": "invalid"}, status=400)
+
+    recent = Report.objects.filter(
+        reporter=request.user,
+        created_at__gte=timezone.now() - timedelta(hours=1)
+    ).count()
+
+    if recent >= REPORTS_PER_HOUR:
+        return JsonResponse({"error": "slow down"}, status=429)
+
+    try:
+        reason = str(json.loads(request.body).get("reason", "")).strip()[:500]
+    except (ValueError, AttributeError):
+        reason = ""
+
+    Report.objects.get_or_create(
+        reporter=request.user,
+        message=message,
+        defaults={
+            "reported_user": message.sender,
+            "message_body": message.body,
+            "reason": reason,
+        }
+    )
+
+    return JsonResponse({"ok": True})
+
+
+@login_required
+def ably_auth(request):
+    """Gives the browser a short-lived token to subscribe to one room."""
+
+    conversation_id = request.GET.get("conversation", "")
+
+    if not conversation_id.isdigit():
+        return HttpResponse(status=400)
+
+    get_object_or_404(
+        Membership,
+        conversation_id=int(conversation_id),
+        user=request.user
+    )
+
+    token = realtime.make_subscribe_token(
+        request.user.pk,
+        int(conversation_id)
+    )
+
+    if not token:
+        return HttpResponse(status=503)
+
+    return HttpResponse(token, content_type="text/plain")
+
+
+# ---------- Profile customization ----------
+
+@login_required
+def profile_view(request):
+
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+
+    if request.method == "POST":
+
+        color = request.POST.get("color", "")
+        avatar = request.POST.get("avatar", "")
+
+        if color in COLORS and (avatar == "" or avatar in AVATARS):
+
+            profile.color = color
+            profile.avatar = avatar
+            profile.save()
+
+            messages.success(request, "Profile updated.")
+
+            return redirect("profile")
+
+        messages.error(request, "Please pick a color and an avatar from the lists.")
+
+    current = avatar_info(request.user)
+
+    return render(
+        request,
+        "messaging/profile.html",
+        {
+            "colors": COLORS,
+            "avatars": AVATARS,
+            "selected_color": profile.color or current["color"],
+            "selected_avatar": profile.avatar,
+        }
+    )
+
+
+==================================================
+FILE: ./profile_update.zip
+==================================================
+[Binary file - contents skipped]
+
+
+==================================================
+FILE: ./requirements.txt
+==================================================
+Django>=5.2,<5.3
+dj-database-url>=2.3
+psycopg[binary]>=3.2
+whitenoise>=6.9
+python-dotenv>=1.0
+
+
+==================================================
+FILE: ./setup_mac.command
+==================================================
+#!/bin/bash
+
+set -e
+
+cd "$(dirname "$0")"
+
+echo "Setting up SimpleChat on your Mac..."
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "Install Python 3 first:"
+    echo "https://www.python.org/downloads/macos/"
+    exit 1
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Install Docker Desktop first:"
+    echo "https://www.docker.com/products/docker-desktop/"
+    exit 1
+fi
+
+python3 -m venv .venv
+
+source .venv/bin/activate
+
+python -m pip install --upgrade pip
+
+pip install -r requirements.txt
+
+if [ ! -f .env ]; then
+    cp .env.example .env
+fi
+
+docker compose up -d db redis
+
+echo "Waiting for PostgreSQL and Redis..."
+
+sleep 5
+
+python manage.py makemigrations messaging
+
+python manage.py migrate
+
+echo ""
+echo "===================================="
+echo "       SETUP COMPLETED!"
+echo "===================================="
+
+echo ""
+echo "Next, run these commands:"
+echo ""
+
+echo "source .venv/bin/activate"
+
+echo "python manage.py createsuperuser"
+
+echo "python manage.py runserver"
+
+echo ""
+echo "Then visit:"
+echo "http://127.0.0.1:8000"
+
+==================================================
+FILE: ./static/admin_custom.css
+==================================================
+/* SimpleChat admin theme: indigo, rounded, modern. Overrides Django's
+   admin CSS variables, so it follows light/dark mode automatically. */
+
+:root {
+    --primary: #4f46e5;
+    --secondary: #1e1b4b;
+    --accent: #fbbf24;
+    --primary-fg: #ffffff;
+
+    --body-fg: #1c1e26;
+    --body-bg: #f5f6fa;
+    --body-quiet-color: #6b7080;
+    --body-loud-color: #12131a;
+
+    --header-color: #c7d2fe;
+    --header-branding-color: #ffffff;
+    --header-bg: #1e1b4b;
+    --header-link-color: #ffffff;
+
+    --breadcrumbs-fg: #c7d2fe;
+    --breadcrumbs-link-fg: #ffffff;
+    --breadcrumbs-bg: #4f46e5;
+
+    --link-fg: #4338ca;
+    --link-hover-color: #312e81;
+    --link-selected-fg: #4f46e5;
+
+    --hairline-color: #e3e5ee;
+    --border-color: #d6d9e5;
+    --darkened-bg: #eceefa;
+    --selected-bg: #e0e7ff;
+    --selected-row: #eef2ff;
+
+    --button-fg: #ffffff;
+    --button-bg: #4f46e5;
+    --button-hover-bg: #4338ca;
+    --default-button-bg: #4f46e5;
+    --default-button-hover-bg: #4338ca;
+    --close-button-bg: #6b7080;
+    --close-button-hover-bg: #4b5060;
+
+    --object-tools-fg: #ffffff;
+    --object-tools-bg: #6366f1;
+    --object-tools-hover-bg: #4f46e5;
+
+    --font-family-primary: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --primary: #6366f1;
+        --secondary: #0f0e26;
+        --accent: #fbbf24;
+        --body-fg: #eceef6;
+        --body-bg: #12131a;
+        --body-quiet-color: #9a9fb2;
+        --body-loud-color: #ffffff;
+        --header-color: #c7d2fe;
+        --header-bg: #0f0e26;
+        --breadcrumbs-bg: #312e81;
+        --link-fg: #a5b4fc;
+        --link-hover-color: #c7d2fe;
+        --link-selected-fg: #a5b4fc;
+        --hairline-color: #2b2e3b;
+        --border-color: #343848;
+        --darkened-bg: #1b1d27;
+        --selected-bg: #262a45;
+        --selected-row: #1f2238;
+        --button-bg: #6366f1;
+        --button-hover-bg: #4f46e5;
+        --default-button-bg: #6366f1;
+        --default-button-hover-bg: #4f46e5;
+        --object-tools-bg: #4f46e5;
+        --object-tools-hover-bg: #6366f1;
+    }
+}
+
+html[data-theme="dark"] {
+    --primary: #6366f1;
+    --secondary: #0f0e26;
+    --accent: #fbbf24;
+    --body-fg: #eceef6;
+    --body-bg: #12131a;
+    --body-quiet-color: #9a9fb2;
+    --body-loud-color: #ffffff;
+    --header-color: #c7d2fe;
+    --header-bg: #0f0e26;
+    --breadcrumbs-bg: #312e81;
+    --link-fg: #a5b4fc;
+    --link-hover-color: #c7d2fe;
+    --link-selected-fg: #a5b4fc;
+    --hairline-color: #2b2e3b;
+    --border-color: #343848;
+    --darkened-bg: #1b1d27;
+    --selected-bg: #262a45;
+    --selected-row: #1f2238;
+    --button-bg: #6366f1;
+    --button-hover-bg: #4f46e5;
+    --default-button-bg: #6366f1;
+    --default-button-hover-bg: #4f46e5;
+    --object-tools-bg: #4f46e5;
+    --object-tools-hover-bg: #6366f1;
+}
+
+
+/* ---- Layout polish ---- */
+
+body {
+    font-family: var(--font-family-primary);
+}
+
+#header {
+    padding: 14px 28px;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.25);
+}
+
+#site-name a {
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+#site-name a span {
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+div.breadcrumbs {
+    padding: 10px 28px;
+}
+
+#content {
+    padding: 24px 28px;
+}
+
+.module {
+    border: 1px solid var(--hairline-color);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--body-bg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.module h2,
+.module caption,
+.inline-group h2 {
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 10px 14px;
+}
+
+.module td,
+.module th {
+    padding: 10px 14px;
+}
+
+#result_list tbody tr:hover td,
+#result_list tbody tr:hover th {
+    background: var(--selected-row);
+}
+
+#changelist-filter {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* ---- Controls ---- */
+
+.button,
+input[type="submit"],
+input[type="button"],
+.submit-row input,
+a.button {
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-weight: 600;
+}
+
+.object-tools a {
+    border-radius: 999px;
+    padding: 6px 16px;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
+input[type="url"],
+input[type="search"],
+textarea,
+select {
+    border-radius: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    border-color: var(--primary);
+    outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+    outline-offset: 0;
+}
+
+ul.messagelist li {
+    border-radius: 10px;
+    margin: 0 0 10px;
+}
+
+/* ---- Login page ---- */
+
+.login #header {
+    justify-content: center;
+}
+
+.login #content {
+    max-width: 420px;
+    margin: 48px auto;
+    padding: 28px;
+    border: 1px solid var(--hairline-color);
+    border-radius: 14px;
+    background: var(--body-bg);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+
+==================================================
+FILE: ./static/app.css
+==================================================
+:root {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #18212f;
+    background: #f5f7fb;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+}
+
+
+/* Navigation */
+
+.topbar {
+    height: 68px;
+    background: #ffffff;
+    border-bottom: 1px solid #e8ebf1;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 max(24px, calc((100% - 980px) / 2));
+    gap: 20px;
+}
+
+.brand {
+    font-weight: 800;
+    font-size: 20px;
+    color: #18212f;
+    text-decoration: none;
+    letter-spacing: -0.5px;
+}
+
+.topbar nav {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+
+.topbar a,
+.back {
+    color: #5a6575;
+    text-decoration: none;
+}
+
+.topbar a:hover,
+.back:hover {
+    color: #315ce8;
+}
+
+
+/* Main layout */
+
+.shell {
+    max-width: 900px;
+    margin: 38px auto;
+    padding: 0 20px;
+}
+
+.page-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+h1 {
+    font-size: 28px;
+    letter-spacing: -0.8px;
+    margin: 0 0 8px;
+}
+
+h2 {
+    margin: 0 0 8px;
+}
+
+.muted {
+    color: #8a94a5;
+    font-size: 14px;
+}
+
+
+/* Panels */
+
+.panel {
+    background: #ffffff;
+    border: 1px solid #e8ebf1;
+    border-radius: 18px;
+    box-shadow: 0 8px 30px #1a2a4510;
+    overflow: hidden;
+}
+
+.narrow {
+    max-width: 500px;
+    margin: 45px auto;
+    padding: 30px;
+}
+
+
+/* Forms */
+
+.narrow form p {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin: 18px 0;
+}
+
+.narrow input,
+.narrow select,
+.field {
+    width: 100%;
+    padding: 12px 13px;
+    border: 1px solid #dce1ea;
+    border-radius: 10px;
+    font: inherit;
+    background: #ffffff;
+}
+
+.narrow ul.errorlist {
+    color: #b42318;
+}
+
+.primary {
+    background: #315ce8;
+    color: white;
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.primary:hover {
+    background: #244bd0;
+}
+
+.button-link {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+}
+
+
+/* Chat list */
+
+.chat-list {
+    padding: 8px;
+}
+
+.chat-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 15px;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #18212f;
+}
+
+.chat-row:hover {
+    background: #f6f8fc;
+}
+
+.avatar {
+    height: 44px;
+    width: 44px;
+    border-radius: 50%;
+    background: #e9efff;
+    color: #315ce8;
+
+    display: grid;
+    place-items: center;
+
+    font-weight: 750;
+}
+
+.chat-info {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.preview {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.unread {
+    background: #315ce8;
+    color: white;
+    border-radius: 20px;
+    padding: 3px 8px;
+    font-size: 12px;
+}
+
+
+/* Empty states */
+
+.empty {
+    text-align: center;
+    padding: 55px 20px;
+    color: #8a94a5;
+}
+
+.empty a {
+    color: #315ce8;
+}
+
+
+/* Conversation */
+
+.conversation-panel {
+    height: min(72vh, 720px);
+    display: flex;
+    flex-direction: column;
+}
+
+.conversation-head {
+    padding: 20px 24px;
+    border-bottom: 1px solid #edf0f5;
+
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.conversation-head h1 {
+    font-size: 20px;
+    margin: 0 0 4px;
+}
+
+.messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px;
+
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.message {
+    max-width: 75%;
+    align-self: flex-start;
+}
+
+.message.mine {
+    align-self: flex-end;
+}
+
+.message-meta {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12px;
+    color: #8a94a5;
+    margin: 0 4px 5px;
+}
+
+.mine .message-meta {
+    justify-content: flex-end;
+}
+
+.bubble {
+    background: #f0f2f7;
+    border-radius: 14px 14px 14px 4px;
+    padding: 11px 14px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.mine .bubble {
+    background: #315ce8;
+    color: #ffffff;
+    border-radius: 14px 14px 4px 14px;
+}
+
+
+/* Message composer */
+
+.composer {
+    display: flex;
+    gap: 10px;
+    padding: 16px;
+    border-top: 1px solid #edf0f5;
+}
+
+.composer input {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid #dce1ea;
+    border-radius: 12px;
+    padding: 13px 15px;
+    font: inherit;
+    outline: none;
+}
+
+.composer input:focus {
+    border-color: #315ce8;
+}
+
+
+/* Miscellaneous */
+
+.inline {
+    display: inline;
+}
+
+.link-button {
+    border: 0;
+    background: none;
+    color: #5a6575;
+    font: inherit;
+    cursor: pointer;
+}
+
+.back {
+    display: inline-block;
+    margin-bottom: 16px;
+}
+
+.notice {
+    padding: 10px 14px;
+    background: #eef4ff;
+    border-radius: 10px;
+    color: #315ce8;
+}
+
+
+/* Mobile */
+
+@media (max-width: 600px) {
+
+    .shell {
+        margin: 22px auto;
+    }
+
+    .page-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .conversation-panel {
+        height: 75vh;
+    }
+
+    .message {
+        max-width: 90%;
+    }
+
+    .topbar {
+        padding: 0 18px;
+    }
+
+    .narrow {
+        padding: 22px;
+    }
+
+}
+
+==================================================
+FILE: ./templates/.DS_Store
+==================================================
+[Binary file - contents skipped]
+
+
+==================================================
+FILE: ./templates/admin/base_site.html
+==================================================
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'admin_custom.css' %}">
+{% endblock %}
+
+{% block branding %}
+<h1 id="site-name">
+    <a href="{% url 'admin:index' %}">SimpleChat <span>Admin</span></a>
+</h1>
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/base.html
+==================================================
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>
+        {% block title %}SimpleChat{% endblock %}
+    </title>
+
+    {% load static %}
+    {% load chat_extras %}
+
+    <link rel="stylesheet" href="{% static 'app.css' %}">
+
+</head>
+
+<body>
+
+<header class="topbar">
+
+    <a class="brand" href="{% url 'inbox' %}">
+        SimpleChat
+    </a>
+
+    <nav>
+
+        {% if user.is_authenticated %}
+
+            <a href="{% url 'inbox' %}">Chats</a>
+
+            <a href="{% url 'people' %}">People</a>
+
+            <a href="{% url 'groups' %}">Groups</a>
+
+            <a
+                href="{% url 'profile' %}"
+                style="display:flex;align-items:center;gap:8px"
+                title="Edit your profile"
+            >
+                {% avatar user 26 %}
+                <span>{{ user.username }}</span>
+            </a>
+
+            <form method="post" action="{% url 'logout' %}" class="inline">
+
+                {% csrf_token %}
+
+                <button class="link-button" type="submit">
+                    Log out
+                </button>
+
+            </form>
+
+        {% else %}
+
+            <a href="{% url 'login' %}">
+                Log in
+            </a>
+
+            <a href="{% url 'register' %}">
+                Create account
+            </a>
+
+        {% endif %}
+
+    </nav>
+
+</header>
+
+
+<main class="shell">
+
+    {% if messages %}
+
+        {% for message in messages %}
+
+            <p class="notice">
+                {{ message }}
+            </p>
+
+        {% endfor %}
+
+    {% endif %}
+
+    {% block content %}
+
+    {% endblock %}
+
+</main>
+
+</body>
+
+</html>
+
+
+==================================================
+FILE: ./templates/messaging/blocked.html
+==================================================
+{% extends "base.html" %}
+{% load chat_extras %}
+
+{% block title %}
+Blocked users · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-heading">
+
+    <div>
+
+        <h1>Blocked users</h1>
+
+        <p class="muted">
+            You won't see their messages and they can't message you.
+        </p>
+
+    </div>
+
+    <a class="button-link" href="{% url 'people' %}">
+        ← People
+    </a>
+
+</div>
+
+
+<section class="panel chat-list">
+
+    {% for block in blocks %}
+
+        <div class="chat-row">
+
+            {% avatar block.blocked %}
+
+            <div class="chat-info">
+                <strong>{{ block.blocked.username }}</strong>
+            </div>
+
+            <form method="post" action="{% url 'unblock_user' block.blocked.id %}">
+
+                {% csrf_token %}
+
+                <button class="primary" type="submit">
+                    Unblock
+                </button>
+
+            </form>
+
+        </div>
+
+    {% empty %}
+
+        <div class="empty">
+            <p>You haven't blocked anyone.</p>
+        </div>
+
+    {% endfor %}
+
+</section>
+
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/messaging/conversation.html
+==================================================
+{% extends "base.html" %}
+{% load chat_extras %}
+
+{% block title %}
+{{ conversation_name }} · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<style>
+    .msg-actions { margin-left: 6px; }
+    .msg-actions .link-button {
+        font-size: 0.72rem;
+        color: var(--muted);
+        margin-left: 6px;
+    }
+</style>
+
+<section class="panel conversation-panel">
+
+
+    <div class="conversation-head">
+
+        <a class="back" href="{% url 'inbox' %}">
+            ←
+        </a>
+
+        <div>
+
+            <h1>
+                {{ conversation_name }}
+            </h1>
+
+            <span class="muted">
+
+                {% if conversation.is_group %}
+
+                    Group &middot; {{ conversation.members.count }} members
+
+                {% else %}
+
+                    Direct message
+
+                {% endif %}
+
+            </span>
+
+        </div>
+
+
+        {% if conversation.is_group %}
+
+            <form
+                method="post"
+                action="{% url 'leave_group' conversation.id %}"
+                class="inline"
+            >
+
+                {% csrf_token %}
+
+                <button class="link-button" type="submit">
+                    Leave
+                </button>
+
+            </form>
+
+        {% endif %}
+
+    </div>
+
+
+    <div id="status" class="muted" hidden>
+        Reconnecting…
+    </div>
+
+
+    <div
+        id="messages"
+        class="messages"
+        data-user-id="{{ user.id }}"
+    >
+
+        {% for message in chat_messages %}
+
+            <div
+                class="message {% if message.sender_id == user.id %}mine{% endif %}"
+                data-message-id="{{ message.id }}"
+            >
+
+                <div class="message-meta">
+
+                    {% avatar message.sender 20 %}
+
+                    {% if message.sender_id != user.id %}
+
+                        <strong>
+                            {{ message.sender.username }}
+                        </strong>
+
+                    {% else %}
+
+                        <strong>
+                            You
+                        </strong>
+
+                    {% endif %}
+
+
+                    <time datetime="{{ message.created_at|date:'c' }}">
+                        {{ message.created_at|date:"H:i" }}
+                    </time>
+
+                    {% if message.sender_id != user.id %}
+
+                        <span class="msg-actions">
+
+                            <button
+                                type="button"
+                                class="link-button"
+                                data-action="report"
+                                data-message-id="{{ message.id }}"
+                            >Report</button>
+
+                            <button
+                                type="button"
+                                class="link-button"
+                                data-action="block"
+                                data-user-id="{{ message.sender_id }}"
+                            >Block</button>
+
+                        </span>
+
+                    {% endif %}
+
+                </div>
+
+
+                <div class="bubble">
+
+                    {{ message.body|linebreaksbr }}
+
+                </div>
+
+            </div>
+
+        {% empty %}
+
+            <div class="empty" id="empty-state">
+                Say hello 👋
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+
+
+    <form id="message-form" class="composer">
+
+        {% csrf_token %}
+
+        <input
+            id="message-input"
+            autocomplete="off"
+            maxlength="4000"
+            placeholder="Write a message..."
+            aria-label="Message"
+        >
+
+        <button class="primary" type="submit">
+            Send
+        </button>
+
+    </form>
+
+
+</section>
+
+
+{{ blocked_ids|json_script:"blocked-ids" }}
+
+{% if realtime %}
+<script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+{% endif %}
+
+<script>
+
+(() => {
+
+    const conversationId = {{ conversation.id }};
+
+    const box = document.getElementById("messages");
+    const form = document.getElementById("message-form");
+    const input = document.getElementById("message-input");
+    const status = document.getElementById("status");
+
+    const currentUserId = Number(box.dataset.userId);
+
+    const realtimeEnabled = {{ realtime|yesno:"true,false" }};
+
+    const seen = new Set();
+
+    const blockedIds = new Set(
+        JSON.parse(document.getElementById("blocked-ids").textContent)
+    );
+
+    let realtime = null;
+    let statusTimer = null;
+    let pollTimer = null;
+
+
+    function formatTime(iso) {
+
+        const d = new Date(iso);
+
+        if (isNaN(d)) {
+            return "";
+        }
+
+        return d.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit"
+        });
+
+    }
+
+
+    // Show server-rendered times in the viewer's own timezone.
+    box.querySelectorAll("time[datetime]").forEach(t => {
+        t.textContent = formatTime(t.getAttribute("datetime"));
+    });
+
+    box.querySelectorAll("[data-message-id]").forEach(el => {
+        seen.add(Number(el.dataset.messageId));
+    });
+
+
+    function lastId() {
+
+        let max = 0;
+
+        seen.forEach(id => {
+            if (id > max) {
+                max = id;
+            }
+        });
+
+        return max;
+
+    }
+
+
+    function scrollDown() {
+
+        box.scrollTop = box.scrollHeight;
+
+    }
+
+
+    function addMessage(data) {
+
+        const id = Number(data.id);
+
+        if (seen.has(id)) {
+            return;
+        }
+
+        seen.add(id);
+
+        if (blockedIds.has(Number(data.sender_id))) {
+            return;
+        }
+
+
+        const empty = document.getElementById("empty-state");
+
+        if (empty) {
+            empty.remove();
+        }
+
+
+        const mine = Number(data.sender_id) === currentUserId;
+
+        const wrap = document.createElement("div");
+        wrap.className = "message" + (mine ? " mine" : "");
+        wrap.dataset.messageId = id;
+
+        const meta = document.createElement("div");
+        meta.className = "message-meta";
+
+        const name = document.createElement("strong");
+        name.textContent = mine ? "You" : data.sender;
+
+        const time = document.createElement("time");
+        time.setAttribute("datetime", data.created_at);
+        time.textContent = formatTime(data.created_at);
+
+        const avatarEl = document.createElement("div");
+        avatarEl.className = "avatar";
+
+        const color = /^#[0-9a-fA-F]{6}$/.test(data.sender_color || "")
+            ? data.sender_color
+            : "#4f46e5";
+
+        avatarEl.style.cssText =
+            `background:${color};color:#fff;width:20px;height:20px;font-size:11px`;
+
+        avatarEl.textContent = data.sender_avatar || data.sender_initial || "?";
+
+        meta.append(avatarEl, name, time);
+
+        if (!mine) {
+
+            const actions = document.createElement("span");
+            actions.className = "msg-actions";
+
+            const report = document.createElement("button");
+            report.type = "button";
+            report.className = "link-button";
+            report.dataset.action = "report";
+            report.dataset.messageId = id;
+            report.textContent = "Report";
+
+            const block = document.createElement("button");
+            block.type = "button";
+            block.className = "link-button";
+            block.dataset.action = "block";
+            block.dataset.userId = data.sender_id;
+            block.textContent = "Block";
+
+            actions.append(report, block);
+            meta.append(actions);
+
+        }
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = data.body;
+
+        wrap.append(meta, bubble);
+        box.appendChild(wrap);
+
+        scrollDown();
+
+    }
+
+
+    // After a reconnect, fetch anything we missed while disconnected.
+    async function catchUp() {
+
+        try {
+
+            const res = await fetch(
+                `/chat/${conversationId}/since/${lastId()}/`,
+                { credentials: "same-origin" }
+            );
+
+            if (!res.ok) {
+                return;
+            }
+
+            const data = await res.json();
+
+            data.messages.forEach(addMessage);
+
+        } catch (error) {
+
+            console.error("Catch-up failed:", error);
+
+        }
+
+    }
+
+
+    function startPolling() {
+
+        clearInterval(pollTimer);
+
+        pollTimer = setInterval(catchUp, 3000);
+
+    }
+
+
+    function connect() {
+
+        // No realtime service available (or its script failed to load):
+        // fall back to checking for new messages every few seconds.
+        if (!realtimeEnabled || typeof Ably === "undefined") {
+
+            catchUp();
+            startPolling();
+
+            return;
+
+        }
+
+        realtime = new Ably.Realtime({
+            authUrl: "/ably-auth/",
+            authParams: { conversation: String(conversationId) }
+        });
+
+        const channel = realtime.channels.get(`chat-${conversationId}`);
+
+        channel.subscribe("message", msg => {
+
+            try {
+
+                addMessage(
+                    typeof msg.data === "string"
+                        ? JSON.parse(msg.data)
+                        : msg.data
+                );
+
+            } catch (error) {
+
+                console.error("Could not process message:", error);
+
+            }
+
+        });
+
+        realtime.connection.on("connected", () => {
+
+            clearTimeout(statusTimer);
+            clearInterval(pollTimer);
+
+            status.hidden = true;
+
+            // Pick up anything that arrived while we were offline.
+            catchUp();
+
+        });
+
+        const showReconnecting = () => {
+
+            clearTimeout(statusTimer);
+
+            statusTimer = setTimeout(() => {
+                status.textContent = "Reconnecting…";
+                status.hidden = false;
+            }, 1500);
+
+        };
+
+        realtime.connection.on("disconnected", showReconnecting);
+        realtime.connection.on("suspended", showReconnecting);
+
+        realtime.connection.on("failed", () => {
+            startPolling();
+        });
+
+        // Safety net: if we aren't connected after 10 seconds, poll instead.
+        setTimeout(() => {
+
+            if (realtime.connection.state !== "connected") {
+                startPolling();
+            }
+
+        }, 10000);
+
+    }
+
+
+    document.addEventListener("visibilitychange", () => {
+
+        if (!document.hidden) {
+            catchUp();
+        }
+
+    });
+
+
+    const csrf = form.querySelector("[name=csrfmiddlewaretoken]").value;
+
+    let sending = false;
+    let flashTimer = null;
+
+
+    function flash(text) {
+
+        clearTimeout(flashTimer);
+
+        status.textContent = text;
+        status.hidden = false;
+
+        flashTimer = setTimeout(() => {
+            status.textContent = "Reconnecting…";
+            status.hidden = true;
+        }, 3000);
+
+    }
+
+
+    // Messages are sent over HTTP (reliable); realtime only delivers them.
+    form.addEventListener("submit", async event => {
+
+        event.preventDefault();
+
+        const body = input.value.trim();
+
+        if (!body || sending) {
+            return;
+        }
+
+        sending = true;
+
+        try {
+
+            const res = await fetch(`/chat/${conversationId}/send/`, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrf
+                },
+                body: JSON.stringify({ body: body })
+            });
+
+            if (res.status === 429) {
+                flash("Slow down a little.");
+                return;
+            }
+
+            if (res.status === 403) {
+                flash("You can't message this person.");
+                return;
+            }
+
+            if (!res.ok) {
+                throw new Error("HTTP " + res.status);
+            }
+
+            addMessage(await res.json());
+
+            input.value = "";
+
+        } catch (error) {
+
+            console.error("Send failed:", error);
+
+            flash("Couldn't send. Your message is still in the box, try again.");
+
+        } finally {
+
+            sending = false;
+            input.focus();
+
+        }
+
+    });
+
+
+    function postJson(url, payload) {
+
+        return fetch(url, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": csrf
+            },
+            body: JSON.stringify(payload)
+        });
+
+    }
+
+
+    // Report / Block buttons (works for old and newly arrived messages).
+    box.addEventListener("click", async event => {
+
+        const button = event.target.closest("[data-action]");
+
+        if (!button) {
+            return;
+        }
+
+        try {
+
+            if (button.dataset.action === "report") {
+
+                const reason = window.prompt(
+                    "Why are you reporting this message? (optional)"
+                );
+
+                if (reason === null) {
+                    return;
+                }
+
+                const res = await postJson(
+                    `/messages/${button.dataset.messageId}/report/`,
+                    { reason: reason }
+                );
+
+                flash(
+                    res.ok
+                        ? "Thanks, we'll take a look."
+                        : "Couldn't send the report."
+                );
+
+            }
+
+            if (button.dataset.action === "block") {
+
+                const ok = window.confirm(
+                    "Block this person? You won't see their messages " +
+                    "and they won't be able to message you."
+                );
+
+                if (!ok) {
+                    return;
+                }
+
+                const res = await postJson(
+                    `/people/${button.dataset.userId}/block/`,
+                    {}
+                );
+
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    flash("Couldn't block that person.");
+                }
+
+            }
+
+        } catch (error) {
+
+            console.error(error);
+
+            flash("Something went wrong.");
+
+        }
+
+    });
+
+
+    window.addEventListener("beforeunload", () => {
+
+        if (realtime) {
+            realtime.close();
+        }
+
+    });
+
+
+    scrollDown();
+
+    connect();
+
+})();
+
+</script>
+
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/messaging/groups.html
+==================================================
+{% extends "base.html" %}
+
+{% block title %}
+Groups · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-heading">
+
+    <div>
+
+        <h1>Groups</h1>
+
+        <p class="muted">
+            Open groups. Join any of them, or start your own.
+        </p>
+
+    </div>
+
+    <a class="primary button-link" href="{% url 'new_conversation' %}">
+        + New group
+    </a>
+
+</div>
+
+
+<form method="get" class="composer">
+
+    <input
+        class="field"
+        name="q"
+        value="{{ q }}"
+        placeholder="Search groups..."
+        autocomplete="off"
+        aria-label="Search groups"
+    >
+
+    <button class="primary" type="submit">
+        Search
+    </button>
+
+</form>
+
+
+<section class="panel chat-list">
+
+    {% for g in groups %}
+
+        <div class="chat-row">
+
+            <div class="avatar">
+                {{ g.title|default:"G"|first|upper }}
+            </div>
+
+            <div class="chat-info">
+
+                <strong>{{ g.title|default:"Group chat" }}</strong>
+
+                <span class="muted preview">
+                    {{ g.member_count }} member{{ g.member_count|pluralize }}
+                </span>
+
+            </div>
+
+            {% if g.id in my_ids %}
+
+                <a class="button-link" href="{% url 'conversation' g.id %}">
+                    Open
+                </a>
+
+            {% else %}
+
+                <form method="post" action="{% url 'join_group' g.id %}">
+
+                    {% csrf_token %}
+
+                    <button class="primary" type="submit">
+                        Join
+                    </button>
+
+                </form>
+
+            {% endif %}
+
+        </div>
+
+    {% empty %}
+
+        <div class="empty">
+
+            <h2>No groups yet</h2>
+
+            <a href="{% url 'new_conversation' %}">
+                Create the first one
+            </a>
+
+        </div>
+
+    {% endfor %}
+
+</section>
+
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/messaging/inbox.html
+==================================================
+{% extends "base.html" %}
+{% load chat_extras %}
+
+{% block title %}
+Chats · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-heading">
+
+    <div>
+
+        <h1>Your chats</h1>
+
+        <p class="muted">
+            Direct messages and groups, all in one place.
+        </p>
+
+    </div>
+
+
+    <div>
+
+        <a class="primary button-link" href="{% url 'people' %}">
+            + Message someone
+        </a>
+
+        <a class="button-link" href="{% url 'groups' %}">
+            Browse groups
+        </a>
+
+    </div>
+
+</div>
+
+
+<section class="panel chat-list">
+
+
+    {% for item in chats %}
+
+        <a
+            class="chat-row"
+            href="{% url 'conversation' item.conversation.id %}"
+        >
+
+            {% if item.other_user %}
+
+                {% avatar item.other_user %}
+
+            {% else %}
+
+                <div class="avatar">
+
+                    {{ item.name|first|upper }}
+
+                </div>
+
+            {% endif %}
+
+
+            <div class="chat-info">
+
+                <strong>
+                    {{ item.name }}
+                </strong>
+
+                <span class="muted preview">
+
+                    {% if item.latest %}
+
+                        {{ item.latest.sender.username }}:
+                        {{ item.latest.body }}
+
+                    {% else %}
+
+                        No messages yet
+
+                    {% endif %}
+
+                </span>
+
+            </div>
+
+
+            {% if item.unread %}
+
+                <span class="unread">
+                    {{ item.unread }}
+                </span>
+
+            {% endif %}
+
+        </a>
+
+
+    {% empty %}
+
+        <div class="empty">
+
+            <h2>No chats yet</h2>
+
+            <p>
+                Message anyone on the site, or join a group.
+            </p>
+
+            <a href="{% url 'people' %}">
+                Find people
+            </a>
+
+            &middot;
+
+            <a href="{% url 'groups' %}">
+                Browse groups
+            </a>
+
+        </div>
+
+    {% endfor %}
+
+
+</section>
+
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/messaging/new_conversation.html
+==================================================
+{% extends "base.html" %}
+
+{% block title %}
+New group · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<section class="panel narrow">
+
+    <a class="back" href="{% url 'groups' %}">
+        ← All groups
+    </a>
+
+
+    <h1>Create a group</h1>
+
+    <p class="muted">
+        Anyone on the site will be able to find and join it.
+    </p>
+
+
+    <form method="post">
+
+        {% csrf_token %}
+
+        {{ form.as_p }}
+
+        <button class="primary" type="submit">
+            Create group
+        </button>
+
+    </form>
+
+</section>
+
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/messaging/people.html
+==================================================
+{% extends "base.html" %}
+{% load chat_extras %}
+
+{% block title %}
+People · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<div class="page-heading">
+
+    <div>
+
+        <h1>People</h1>
+
+        <p class="muted">
+            Everyone on the site. Message anyone.
+        </p>
+
+    </div>
+
+    <a class="button-link" href="{% url 'blocked' %}">
+        Blocked users
+    </a>
+
+</div>
+
+
+<form method="get" class="composer">
+
+    <input
+        class="field"
+        name="q"
+        value="{{ q }}"
+        placeholder="Search by name..."
+        autocomplete="off"
+        aria-label="Search people"
+    >
+
+    <button class="primary" type="submit">
+        Search
+    </button>
+
+</form>
+
+
+<section class="panel chat-list">
+
+    {% for person in people %}
+
+        <div class="chat-row">
+
+            {% avatar person %}
+
+            <div class="chat-info">
+                <strong>{{ person.username }}</strong>
+            </div>
+
+            <form method="post" action="{% url 'start_dm' person.id %}">
+
+                {% csrf_token %}
+
+                <button class="primary" type="submit">
+                    Message
+                </button>
+
+            </form>
+
+        </div>
+
+    {% empty %}
+
+        <div class="empty">
+            <p>No one found.</p>
+        </div>
+
+    {% endfor %}
+
+</section>
+
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/messaging/profile.html
+==================================================
+{% extends "base.html" %}
+{% load chat_extras %}
+
+{% block title %}
+Profile · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<style>
+    .pick-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+        gap: 10px;
+        margin: 10px 0 22px;
+    }
+
+    .pick {
+        position: relative;
+        cursor: pointer;
+    }
+
+    .pick input {
+        position: absolute;
+        opacity: 0;
+        inset: 0;
+        cursor: pointer;
+    }
+
+    .pick span {
+        display: grid;
+        place-items: center;
+        height: 44px;
+        border-radius: 50%;
+        font-size: 22px;
+        background: var(--bg);
+        border: 2px solid transparent;
+        color: var(--text);
+    }
+
+    .pick.color span {
+        border-radius: 12px;
+    }
+
+    .pick input:checked + span {
+        border-color: var(--text);
+        box-shadow: 0 0 0 3px var(--accent);
+    }
+
+    .pick input:focus-visible + span {
+        outline: 2px solid var(--accent);
+    }
+
+    .preview-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 16px 0 24px;
+    }
+</style>
+
+<section class="panel narrow">
+
+    <a class="back" href="{% url 'inbox' %}">
+        ← Chats
+    </a>
+
+    <h1>Your profile</h1>
+
+    <p class="muted">
+        Pick a color and an avatar. Other people see them next to your name.
+    </p>
+
+    <div class="preview-row">
+
+        <div
+            id="preview"
+            class="avatar"
+            style="background:{{ selected_color }};color:#fff;width:64px;height:64px;font-size:32px"
+        >{% if selected_avatar %}{{ selected_avatar }}{% else %}{{ user.username|first|upper }}{% endif %}</div>
+
+        <strong>{{ user.username }}</strong>
+
+    </div>
+
+    <form method="post">
+
+        {% csrf_token %}
+
+        <strong>Color</strong>
+
+        <div class="pick-grid">
+
+            {% for c in colors %}
+
+                <label class="pick color">
+
+                    <input
+                        type="radio"
+                        name="color"
+                        value="{{ c }}"
+                        {% if c == selected_color %}checked{% endif %}
+                    >
+
+                    <span style="background:{{ c }}"></span>
+
+                </label>
+
+            {% endfor %}
+
+        </div>
+
+        <strong>Avatar</strong>
+
+        <div class="pick-grid">
+
+            <label class="pick">
+
+                <input
+                    type="radio"
+                    name="avatar"
+                    value=""
+                    data-text="{{ user.username|first|upper }}"
+                    {% if not selected_avatar %}checked{% endif %}
+                >
+
+                <span title="Use my initial" style="font-size:16px;font-weight:700">
+                    {{ user.username|first|upper }}
+                </span>
+
+            </label>
+
+            {% for a in avatars %}
+
+                <label class="pick">
+
+                    <input
+                        type="radio"
+                        name="avatar"
+                        value="{{ a }}"
+                        data-text="{{ a }}"
+                        {% if a == selected_avatar %}checked{% endif %}
+                    >
+
+                    <span>{{ a }}</span>
+
+                </label>
+
+            {% endfor %}
+
+        </div>
+
+        <button class="primary" type="submit">
+            Save
+        </button>
+
+    </form>
+
+</section>
+
+
+<script>
+
+(() => {
+
+    const preview = document.getElementById("preview");
+
+    document.querySelectorAll('input[name="color"]').forEach(input => {
+
+        input.addEventListener("change", () => {
+            preview.style.background = input.value;
+        });
+
+    });
+
+    document.querySelectorAll('input[name="avatar"]').forEach(input => {
+
+        input.addEventListener("change", () => {
+            preview.textContent = input.dataset.text;
+        });
+
+    });
+
+})();
+
+</script>
+
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/registration/login.html
+==================================================
+{% extends "base.html" %}
+
+{% block title %}Log in · SimpleChat{% endblock %}
+
+{% block content %}
+
+<section class="panel narrow">
+
+    <h1>Log in</h1>
+
+    <form method="post">
+
+        {% csrf_token %}
+
+        {{ form.as_p }}
+
+        <button class="primary" type="submit">Log in</button>
+
+    </form>
+
+    <p class="muted">
+        New here? <a href="{% url 'register' %}">Create an account</a>
+    </p>
+
+</section>
+
+{% endblock %}
+
+
+==================================================
+FILE: ./templates/registration/register.html
+==================================================
+{% extends "base.html" %}
+
+{% block title %}Create account · SimpleChat{% endblock %}
+
+{% block content %}
+
+<section class="panel narrow">
+
+    <h1>Create account</h1>
+
+    <p class="muted">
+        Your username is what other people see on the site.
+    </p>
+
+    <form method="post">
+
+        {% csrf_token %}
+
+        {{ form.as_p }}
+
+        {% if turnstile_site_key %}
+
+            <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+            <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>
+
+            <br>
+
+        {% endif %}
+
+        <button class="primary" type="submit">Create account</button>
+
+    </form>
+
+    <p class="muted">
+        Already have an account? <a href="{% url 'login' %}">Log in</a>
+    </p>
+
+</section>
+
+{% endblock %}
+

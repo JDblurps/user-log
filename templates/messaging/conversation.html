@@ -44,6 +44,8 @@
 
                 {% endif %}
 
+                &middot; <span id="rt-status">connecting…</span>
+
             </span>
 
         </div>
@@ -373,9 +375,27 @@
     }
 
 
+    let rtText = "connecting…";
+    let polling = false;
+
+
+    function renderRt() {
+
+        const el = document.getElementById("rt-status");
+
+        if (el) {
+            el.textContent = rtText + (polling ? " · polling" : "");
+        }
+
+    }
+
+
     function startPolling() {
 
         clearInterval(pollTimer);
+
+        polling = true;
+        renderRt();
 
         pollTimer = setInterval(catchUp, 3000);
 
@@ -388,6 +408,12 @@
         // fall back to checking for new messages every few seconds.
         if (!realtimeEnabled || typeof Ably === "undefined") {
 
+            rtText = !realtimeEnabled
+                ? "realtime off on server"
+                : "Ably script blocked or failed to load";
+
+            console.warn("[realtime] using polling:", rtText);
+
             catchUp();
             startPolling();
 
@@ -398,6 +424,20 @@
         realtime = new Ably.Realtime({
             authUrl: "/ably-auth/",
             authParams: { conversation: String(conversationId) }
+        });
+
+        realtime.connection.on(change => {
+
+            const reason = change.reason ? change.reason.message : "";
+
+            console.info("[realtime]", change.current, reason);
+
+            rtText = change.current === "connected"
+                ? "● live"
+                : change.current + (reason ? ": " + reason : "");
+
+            renderRt();
+
         });
 
         const channel = realtime.channels.get(`chat-${conversationId}`);
@@ -424,6 +464,9 @@
 
             clearTimeout(statusTimer);
             clearInterval(pollTimer);
+
+            polling = false;
+            renderRt();
 
             status.hidden = true;
 
