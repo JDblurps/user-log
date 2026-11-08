@@ -12,6 +12,7 @@
     </title>
 
     {% load static %}
+    {% load chat_extras %}
 
     <link rel="stylesheet" href="{% static 'app.css' %}">
 
@@ -35,9 +36,14 @@
 
             <a href="{% url 'groups' %}">Groups</a>
 
-            <span class="muted">
-                {{ user.username }}
-            </span>
+            <a
+                href="{% url 'profile' %}"
+                style="display:flex;align-items:center;gap:8px"
+                title="Edit your profile"
+            >
+                {% avatar user 26 %}
+                <span>{{ user.username }}</span>
+            </a>
 
             <form method="post" action="{% url 'logout' %}" class="inline">
 

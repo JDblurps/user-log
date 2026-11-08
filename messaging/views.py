@@ -19,10 +19,12 @@ from .models import (
     Conversation,
     Membership,
     Message,
+    Profile,
     Report,
     SignupAttempt,
 )
 from . import realtime
+from .avatars import AVATARS, COLORS, avatar_info, avatar_payload
 from .utils import (
     blocked_ids_for,
     client_ip,
@@ -123,11 +125,25 @@ def inbox(request):
             .count()
         )
 
+        other_user = None
+
+        if not conversation.is_group:
+
+            other = (
+                conversation.members
+                .exclude(user=request.user)
+                .select_related("user__profile")
+                .first()
+            )
+
+            other_user = other.user if other else None
+
         chats.append({
             "conversation": conversation,
             "name": conversation.display_name_for(request.user),
             "latest": latest,
-            "unread": unread
+            "unread": unread,
+            "other_user": other_user,
         })
 
     return render(request, "messaging/inbox.html", {"chats": chats})
@@ -144,6 +160,7 @@ def people(request):
         User.objects
         .filter(is_active=True)
         .exclude(pk=request.user.pk)
+        .select_related("profile")
     )
 
     if q:
@@ -328,7 +345,7 @@ def conversation_view(request, conversation_id):
 
     recent = list(
         conversation.messages
-        .select_related("sender")
+        .select_related("sender__profile")
         .exclude(sender_id__in=blocked)
         .order_by("-created_at")[:HISTORY_LIMIT]
     )
@@ -363,7 +380,7 @@ def messages_since(request, conversation_id, last_id):
         Message.objects
         .filter(conversation_id=conversation_id, id__gt=last_id)
         .exclude(sender_id__in=blocked_ids_for(request.user))
-        .select_related("sender")
+        .select_related("sender__profile")
         .order_by("id")[:HISTORY_LIMIT]
     )
 
@@ -375,6 +392,7 @@ def messages_since(request, conversation_id, last_id):
                 "sender": m.sender.username,
                 "sender_id": m.sender_id,
                 "created_at": m.created_at.isoformat(),
+                **avatar_payload(m.sender),
             }
             for m in msgs
         ]
@@ -441,6 +459,7 @@ def send_message(request, conversation_id):
         "sender": request.user.username,
         "sender_id": request.user.id,
         "created_at": message.created_at.isoformat(),
+        **avatar_payload(request.user),
     }
 
     # Push to everyone in the room. If this fails the message is still
@@ -486,7 +505,7 @@ def blocked_list(request):
     blocks = (
         Block.objects
         .filter(blocker=request.user)
-        .select_related("blocked")
+        .select_related("blocked__profile")
         .order_by("blocked__username")
     )
 
@@ -569,3 +588,41 @@ def ably_auth(request):
         return HttpResponse(status=503)
 
     return HttpResponse(token, content_type="text/plain")
+
+
+# ---------- Profile customization ----------
+
+@login_required
+def profile_view(request):
+
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+
+    if request.method == "POST":
+
+        color = request.POST.get("color", "")
+        avatar = request.POST.get("avatar", "")
+
+        if color in COLORS and (avatar == "" or avatar in AVATARS):
+
+            profile.color = color
+            profile.avatar = avatar
+            profile.save()
+
+            messages.success(request, "Profile updated.")
+
+            return redirect("profile")
+
+        messages.error(request, "Please pick a color and an avatar from the lists.")
+
+    current = avatar_info(request.user)
+
+    return render(
+        request,
+        "messaging/profile.html",
+        {
+            "colors": COLORS,
+            "avatars": AVATARS,
+            "selected_color": profile.color or current["color"],
+            "selected_avatar": profile.avatar,
+        }
+    )

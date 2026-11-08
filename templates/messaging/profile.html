@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% load chat_extras %}
+
+{% block title %}
+Profile · SimpleChat
+{% endblock %}
+
+
+{% block content %}
+
+<style>
+    .pick-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+        gap: 10px;
+        margin: 10px 0 22px;
+    }
+
+    .pick {
+        position: relative;
+        cursor: pointer;
+    }
+
+    .pick input {
+        position: absolute;
+        opacity: 0;
+        inset: 0;
+        cursor: pointer;
+    }
+
+    .pick span {
+        display: grid;
+        place-items: center;
+        height: 44px;
+        border-radius: 50%;
+        font-size: 22px;
+        background: var(--bg);
+        border: 2px solid transparent;
+        color: var(--text);
+    }
+
+    .pick.color span {
+        border-radius: 12px;
+    }
+
+    .pick input:checked + span {
+        border-color: var(--text);
+        box-shadow: 0 0 0 3px var(--accent);
+    }
+
+    .pick input:focus-visible + span {
+        outline: 2px solid var(--accent);
+    }
+
+    .preview-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 16px 0 24px;
+    }
+</style>
+
+<section class="panel narrow">
+
+    <a class="back" href="{% url 'inbox' %}">
+        ← Chats
+    </a>
+
+    <h1>Your profile</h1>
+
+    <p class="muted">
+        Pick a color and an avatar. Other people see them next to your name.
+    </p>
+
+    <div class="preview-row">
+
+        <div
+            id="preview"
+            class="avatar"
+            style="background:{{ selected_color }};color:#fff;width:64px;height:64px;font-size:32px"
+        >{% if selected_avatar %}{{ selected_avatar }}{% else %}{{ user.username|first|upper }}{% endif %}</div>
+
+        <strong>{{ user.username }}</strong>
+
+    </div>
+
+    <form method="post">
+
+        {% csrf_token %}
+
+        <strong>Color</strong>
+
+        <div class="pick-grid">
+
+            {% for c in colors %}
+
+                <label class="pick color">
+
+                    <input
+                        type="radio"
+                        name="color"
+                        value="{{ c }}"
+                        {% if c == selected_color %}checked{% endif %}
+                    >
+
+                    <span style="background:{{ c }}"></span>
+
+                </label>
+
+            {% endfor %}
+
+        </div>
+
+        <strong>Avatar</strong>
+
+        <div class="pick-grid">
+
+            <label class="pick">
+
+                <input
+                    type="radio"
+                    name="avatar"
+                    value=""
+                    data-text="{{ user.username|first|upper }}"
+                    {% if not selected_avatar %}checked{% endif %}
+                >
+
+                <span title="Use my initial" style="font-size:16px;font-weight:700">
+                    {{ user.username|first|upper }}
+                </span>
+
+            </label>
+
+            {% for a in avatars %}
+
+                <label class="pick">
+
+                    <input
+                        type="radio"
+                        name="avatar"
+                        value="{{ a }}"
+                        data-text="{{ a }}"
+                        {% if a == selected_avatar %}checked{% endif %}
+                    >
+
+                    <span>{{ a }}</span>
+
+                </label>
+
+            {% endfor %}
+
+        </div>
+
+        <button class="primary" type="submit">
+            Save
+        </button>
+
+    </form>
+
+</section>
+
+
+<script>
+
+(() => {
+
+    const preview = document.getElementById("preview");
+
+    document.querySelectorAll('input[name="color"]').forEach(input => {
+
+        input.addEventListener("change", () => {
+            preview.style.background = input.value;
+        });
+
+    });
+
+    document.querySelectorAll('input[name="avatar"]').forEach(input => {
+
+        input.addEventListener("change", () => {
+            preview.textContent = input.dataset.text;
+        });
+
+    });
+
+})();
+
+</script>
+
+{% endblock %}

@@ -7,12 +7,17 @@ from .models import (
     Conversation,
     Membership,
     Message,
+    Profile,
     Report,
     SignupAttempt,
 )
 
 
 User = get_user_model()
+
+admin.site.site_header = "SimpleChat Admin"
+admin.site.site_title = "SimpleChat Admin"
+admin.site.index_title = "Moderation and community"
 
 
 # ---- Users: ban / unban ----
@@ -141,3 +146,4 @@ class ConversationAdmin(admin.ModelAdmin):
 admin.site.register(Membership)
 admin.site.register(Block)
 admin.site.register(SignupAttempt)
+admin.site.register(Profile)

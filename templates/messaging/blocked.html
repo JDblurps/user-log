@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load chat_extras %}
 
 {% block title %}
 Blocked users · SimpleChat
@@ -32,9 +33,7 @@ Blocked users · SimpleChat
 
         <div class="chat-row">
 
-            <div class="avatar">
-                {{ block.blocked.username|first|upper }}
-            </div>
+            {% avatar block.blocked %}
 
             <div class="chat-info">
                 <strong>{{ block.blocked.username }}</strong>

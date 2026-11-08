@@ -197,3 +197,23 @@ class SignupAttempt(models.Model):
     ip = models.CharField(max_length=64, db_index=True)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+
+class Profile(models.Model):
+    """Optional look customization. Users without one get defaults."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="profile"
+    )
+
+    # One of messaging.avatars.COLORS (empty = automatic color).
+    color = models.CharField(max_length=7, blank=True)
+
+    # One of messaging.avatars.AVATARS (empty = use the initial).
+    avatar = models.CharField(max_length=16, blank=True)
+
+    def __str__(self):
+
+        return f"Profile of {self.user}"

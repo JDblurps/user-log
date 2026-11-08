@@ -1,0 +1,225 @@
+/* SimpleChat admin theme: indigo, rounded, modern. Overrides Django's
+   admin CSS variables, so it follows light/dark mode automatically. */
+
+:root {
+    --primary: #4f46e5;
+    --secondary: #1e1b4b;
+    --accent: #fbbf24;
+    --primary-fg: #ffffff;
+
+    --body-fg: #1c1e26;
+    --body-bg: #f5f6fa;
+    --body-quiet-color: #6b7080;
+    --body-loud-color: #12131a;
+
+    --header-color: #c7d2fe;
+    --header-branding-color: #ffffff;
+    --header-bg: #1e1b4b;
+    --header-link-color: #ffffff;
+
+    --breadcrumbs-fg: #c7d2fe;
+    --breadcrumbs-link-fg: #ffffff;
+    --breadcrumbs-bg: #4f46e5;
+
+    --link-fg: #4338ca;
+    --link-hover-color: #312e81;
+    --link-selected-fg: #4f46e5;
+
+    --hairline-color: #e3e5ee;
+    --border-color: #d6d9e5;
+    --darkened-bg: #eceefa;
+    --selected-bg: #e0e7ff;
+    --selected-row: #eef2ff;
+
+    --button-fg: #ffffff;
+    --button-bg: #4f46e5;
+    --button-hover-bg: #4338ca;
+    --default-button-bg: #4f46e5;
+    --default-button-hover-bg: #4338ca;
+    --close-button-bg: #6b7080;
+    --close-button-hover-bg: #4b5060;
+
+    --object-tools-fg: #ffffff;
+    --object-tools-bg: #6366f1;
+    --object-tools-hover-bg: #4f46e5;
+
+    --font-family-primary: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --primary: #6366f1;
+        --secondary: #0f0e26;
+        --accent: #fbbf24;
+        --body-fg: #eceef6;
+        --body-bg: #12131a;
+        --body-quiet-color: #9a9fb2;
+        --body-loud-color: #ffffff;
+        --header-color: #c7d2fe;
+        --header-bg: #0f0e26;
+        --breadcrumbs-bg: #312e81;
+        --link-fg: #a5b4fc;
+        --link-hover-color: #c7d2fe;
+        --link-selected-fg: #a5b4fc;
+        --hairline-color: #2b2e3b;
+        --border-color: #343848;
+        --darkened-bg: #1b1d27;
+        --selected-bg: #262a45;
+        --selected-row: #1f2238;
+        --button-bg: #6366f1;
+        --button-hover-bg: #4f46e5;
+        --default-button-bg: #6366f1;
+        --default-button-hover-bg: #4f46e5;
+        --object-tools-bg: #4f46e5;
+        --object-tools-hover-bg: #6366f1;
+    }
+}
+
+html[data-theme="dark"] {
+    --primary: #6366f1;
+    --secondary: #0f0e26;
+    --accent: #fbbf24;
+    --body-fg: #eceef6;
+    --body-bg: #12131a;
+    --body-quiet-color: #9a9fb2;
+    --body-loud-color: #ffffff;
+    --header-color: #c7d2fe;
+    --header-bg: #0f0e26;
+    --breadcrumbs-bg: #312e81;
+    --link-fg: #a5b4fc;
+    --link-hover-color: #c7d2fe;
+    --link-selected-fg: #a5b4fc;
+    --hairline-color: #2b2e3b;
+    --border-color: #343848;
+    --darkened-bg: #1b1d27;
+    --selected-bg: #262a45;
+    --selected-row: #1f2238;
+    --button-bg: #6366f1;
+    --button-hover-bg: #4f46e5;
+    --default-button-bg: #6366f1;
+    --default-button-hover-bg: #4f46e5;
+    --object-tools-bg: #4f46e5;
+    --object-tools-hover-bg: #6366f1;
+}
+
+
+/* ---- Layout polish ---- */
+
+body {
+    font-family: var(--font-family-primary);
+}
+
+#header {
+    padding: 14px 28px;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.25);
+}
+
+#site-name a {
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+#site-name a span {
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+div.breadcrumbs {
+    padding: 10px 28px;
+}
+
+#content {
+    padding: 24px 28px;
+}
+
+.module {
+    border: 1px solid var(--hairline-color);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--body-bg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.module h2,
+.module caption,
+.inline-group h2 {
+    font-size: 0.85rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 10px 14px;
+}
+
+.module td,
+.module th {
+    padding: 10px 14px;
+}
+
+#result_list tbody tr:hover td,
+#result_list tbody tr:hover th {
+    background: var(--selected-row);
+}
+
+#changelist-filter {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* ---- Controls ---- */
+
+.button,
+input[type="submit"],
+input[type="button"],
+.submit-row input,
+a.button {
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-weight: 600;
+}
+
+.object-tools a {
+    border-radius: 999px;
+    padding: 6px 16px;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
+input[type="url"],
+input[type="search"],
+textarea,
+select {
+    border-radius: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    border-color: var(--primary);
+    outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+    outline-offset: 0;
+}
+
+ul.messagelist li {
+    border-radius: 10px;
+    margin: 0 0 10px;
+}
+
+/* ---- Login page ---- */
+
+.login #header {
+    justify-content: center;
+}
+
+.login #content {
+    max-width: 420px;
+    margin: 48px auto;
+    padding: 28px;
+    border: 1px solid var(--hairline-color);
+    border-radius: 14px;
+    background: var(--body-bg);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
