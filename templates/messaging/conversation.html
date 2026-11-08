@@ -183,7 +183,7 @@
 {{ blocked_ids|json_script:"blocked-ids" }}
 
 {% if realtime %}
-<script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+<script src="https://cdn.ably.com/lib/ably.min-3.js"></script>
 {% endif %}
 
 <script>
@@ -406,7 +406,7 @@
 
         // No realtime service available (or its script failed to load):
         // fall back to checking for new messages every few seconds.
-        if (!realtimeEnabled || typeof Ably === "undefined") {
+        if (!realtimeEnabled || typeof AblyPubSub === "undefined") {
 
             rtText = !realtimeEnabled
                 ? "realtime off on server"
@@ -421,9 +421,12 @@
 
         }
 
-        realtime = new Ably.Realtime({
+        // Ably v3 device client. The clientId must match the one inside the
+        // token our server issues (the user's id).
+        realtime = AblyPubSub.createClient({
             authUrl: "/ably-auth/",
-            authParams: { conversation: String(conversationId) }
+            authParams: { conversation: String(conversationId) },
+            clientId: String(currentUserId)
         });
 
         realtime.connection.on(change => {

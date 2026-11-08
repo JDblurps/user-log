@@ -86,7 +86,10 @@ def publish(conversation_id, payload):
     auth = base64.b64encode(key.encode()).decode()
 
     request = Request(
-        f"https://rest.ably.io/channels/{channel_name(conversation_id)}/messages",
+        # clientType=server declares this call as coming from our server,
+        # which Ably's MAU pricing requires (and doesn't count as a user).
+        f"https://rest.ably.io/channels/{channel_name(conversation_id)}"
+        "/messages?clientType=server",
         data=body,
         method="POST",
         headers={
