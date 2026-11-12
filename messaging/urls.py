@@ -24,6 +24,7 @@ urlpatterns = [
     path("ably-auth/", views.ably_auth, name="ably_auth"),
 
     path("messages/<int:message_id>/report/", views.report_message, name="report_message"),
+    path("messages/<int:message_id>/react/", views.react_to_message, name="react_to_message"),
 
     path("chat/<int:conversation_id>/", views.conversation_view, name="conversation"),
     path(

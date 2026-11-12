@@ -1,0 +1,135 @@
+/* Phone layout. Loaded after app.css, so it only overrides on small screens. */
+
+@media (max-width: 640px) {
+
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        font-size: 16px;
+    }
+
+    /* Top bar: brand on one line, links spread underneath */
+    .topbar {
+        padding: 8px 12px;
+        padding-top: calc(8px + env(safe-area-inset-top, 0px));
+        gap: 6px;
+    }
+
+    .topbar nav {
+        width: 100%;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .topbar nav a span {
+        display: none;            /* hide the username text, keep the avatar */
+    }
+
+    .brand {
+        font-size: 1rem;
+    }
+
+    .shell {
+        padding: 12px 10px calc(24px + env(safe-area-inset-bottom, 0px));
+    }
+
+    h1 {
+        font-size: 1.25rem;
+    }
+
+    .panel {
+        padding: 14px;
+        border-radius: 12px;
+        margin-top: 12px;
+    }
+
+    .panel.chat-list {
+        padding: 0;
+    }
+
+    .panel.narrow {
+        max-width: 100%;
+    }
+
+    .page-heading {
+        gap: 10px;
+    }
+
+    .page-heading > a,
+    .page-heading > div:last-child .button-link {
+        flex: 1 1 auto;
+        text-align: center;
+    }
+
+    /* Lists */
+    .chat-row {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .chat-row .primary,
+    .chat-row .button-link {
+        padding: 8px 12px;
+        font-size: 0.9rem;
+    }
+
+    /* Bigger tap targets, and 16px inputs so iOS doesn't zoom on focus */
+    input,
+    .field,
+    textarea,
+    select {
+        font-size: 16px;
+    }
+
+    .primary,
+    .button-link {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Chat screen */
+    .conversation-panel {
+        padding: 10px;
+    }
+
+    .conversation-head {
+        gap: 8px;
+    }
+
+    .messages {
+        height: calc(100vh - 235px);
+        height: calc(100dvh - 235px);
+        min-height: 220px;
+        padding: 10px 2px;
+    }
+
+    .message {
+        max-width: 92%;
+    }
+
+    .composer {
+        position: sticky;
+        bottom: 0;
+        padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+        background: Canvas;
+    }
+
+    .composer input {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .msg-actions .link-button {
+        font-size: 0.8rem;
+        padding: 6px 4px;
+    }
+
+    /* Profile pickers */
+    .pick-grid {
+        grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+    }
+}

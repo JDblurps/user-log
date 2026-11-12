@@ -1,0 +1,119 @@
+/* Reactions, mentions, typing indicator, emoji picker.
+   Uses neutral translucent colors so it works in light and dark themes. */
+
+.reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+    position: relative;
+    align-items: center;
+}
+
+.message.mine .reactions {
+    justify-content: flex-end;
+}
+
+.reaction {
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    background: rgba(127, 127, 127, 0.12);
+    color: inherit;
+    border-radius: 999px;
+    padding: 1px 9px;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    cursor: pointer;
+}
+
+.reaction.mine {
+    border-color: #6366f1;
+    background: rgba(99, 102, 241, 0.22);
+}
+
+.reaction.add {
+    opacity: 0.5;
+    padding: 1px 8px;
+}
+
+.reaction.add:hover {
+    opacity: 1;
+}
+
+.reaction-picker {
+    display: flex;
+    gap: 2px;
+    padding: 4px 8px;
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    border-radius: 999px;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.reaction-picker button {
+    background: none;
+    border: 0;
+    font-size: 1.3rem;
+    padding: 2px 4px;
+    cursor: pointer;
+}
+
+.mention {
+    background: rgba(99, 102, 241, 0.2);
+    border-radius: 4px;
+    padding: 0 3px;
+    font-weight: 600;
+}
+
+.mention.me {
+    background: rgba(251, 191, 36, 0.4);
+}
+
+.message.mentioned .bubble {
+    box-shadow: inset 3px 0 0 #fbbf24;
+}
+
+.typing {
+    min-height: 1.3em;
+    font-size: 0.8rem;
+    padding: 2px 4px;
+}
+
+.emoji-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 6px;
+    margin-top: 8px;
+    border: 1px solid rgba(127, 127, 127, 0.3);
+    border-radius: 10px;
+}
+
+.emoji-row[hidden] {
+    display: none;
+}
+
+.emoji-row button {
+    background: none;
+    border: 0;
+    font-size: 1.4rem;
+    padding: 4px 6px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.emoji-row button:hover {
+    background: rgba(127, 127, 127, 0.2);
+}
+
+.emoji-btn {
+    background: none;
+    border: 0;
+    font-size: 1.5rem;
+    padding: 0 6px;
+    cursor: pointer;
+}
+
+#online {
+    cursor: pointer;
+}

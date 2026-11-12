@@ -8,6 +8,7 @@ from .models import (
     Membership,
     Message,
     Profile,
+    Reaction,
     Report,
     SignupAttempt,
 )
@@ -147,3 +148,4 @@ admin.site.register(Membership)
 admin.site.register(Block)
 admin.site.register(SignupAttempt)
 admin.site.register(Profile)
+admin.site.register(Reaction)

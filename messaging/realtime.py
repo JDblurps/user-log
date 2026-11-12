@@ -27,6 +27,11 @@ def channel_name(conversation_id):
     return f"chat-{conversation_id}"
 
 
+def typing_channel_name(conversation_id):
+
+    return f"typing-{conversation_id}"
+
+
 def _b64url(data):
 
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
@@ -49,9 +54,12 @@ def make_subscribe_token(user_id, conversation_id):
     claims = {
         "iat": now,
         "exp": now + TOKEN_TTL_SECONDS,
-        "x-ably-capability": json.dumps(
-            {channel_name(conversation_id): ["subscribe"]}
-        ),
+        # Chat channel: listen + show who's online. Only our server can
+        # publish there. Typing channel: everyone in the room may publish.
+        "x-ably-capability": json.dumps({
+            channel_name(conversation_id): ["subscribe", "presence"],
+            typing_channel_name(conversation_id): ["subscribe", "publish"],
+        }),
         "x-ably-clientId": str(user_id),
     }
 
@@ -70,7 +78,7 @@ def make_subscribe_token(user_id, conversation_id):
     return signing_input + "." + _b64url(signature)
 
 
-def publish(conversation_id, payload):
+def publish(conversation_id, payload, event="message"):
     """Publish a message to the room. Returns True on success."""
 
     key = getattr(settings, "ABLY_API_KEY", "")
@@ -79,7 +87,7 @@ def publish(conversation_id, payload):
         return False
 
     body = json.dumps({
-        "name": "message",
+        "name": event,
         "data": json.dumps(payload),
     }).encode()
 

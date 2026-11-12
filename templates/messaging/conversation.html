@@ -44,7 +44,7 @@
 
                 {% endif %}
 
-                &middot; <span id="rt-status">connecting…</span>
+                &middot; <span id="rt-status">connecting…</span> &middot; <span id="online" title=""></span>
 
             </span>
 
@@ -81,6 +81,7 @@
         id="messages"
         class="messages"
         data-user-id="{{ user.id }}"
+        data-username="{{ user.username }}"
     >
 
         {% for message in chat_messages %}
@@ -140,9 +141,11 @@
 
                 <div class="bubble">
 
-                    {{ message.body|linebreaksbr }}
+                    {{ message.body|chat_body:user.username }}
 
                 </div>
+
+                <div class="reactions"></div>
 
             </div>
 
@@ -158,15 +161,26 @@
 
 
 
+    <div id="typing" class="typing muted" aria-live="polite"></div>
+
+    <div id="emoji-row" class="emoji-row" hidden></div>
+
     <form id="message-form" class="composer">
 
         {% csrf_token %}
+
+        <button
+            type="button"
+            id="emoji-btn"
+            class="emoji-btn"
+            aria-label="Emoji"
+        >😊</button>
 
         <input
             id="message-input"
             autocomplete="off"
             maxlength="4000"
-            placeholder="Write a message..."
+            placeholder="Write a message… (try /roll)"
             aria-label="Message"
         >
 
@@ -181,6 +195,10 @@
 
 
 {{ blocked_ids|json_script:"blocked-ids" }}
+
+{{ reaction_data|json_script:"reaction-data" }}
+
+{{ reaction_emoji|json_script:"reaction-emoji" }}
 
 {% if realtime %}
 <script src="https://cdn.ably.com/lib/ably.min-3.js"></script>
@@ -198,6 +216,20 @@
     const status = document.getElementById("status");
 
     const currentUserId = Number(box.dataset.userId);
+    const currentUsername = box.dataset.username || "";
+
+    const REACTION_EMOJI = JSON.parse(
+        document.getElementById("reaction-emoji").textContent
+    );
+
+    // {messageId: {emoji: [userIds]}}
+    const reactions = JSON.parse(
+        document.getElementById("reaction-data").textContent
+    );
+
+    const typers = new Map();
+    let typingChannel = null;
+    let lastTypingSent = 0;
 
     const realtimeEnabled = {{ realtime|yesno:"true,false" }};
 
@@ -260,6 +292,279 @@
     }
 
 
+    // Message text with @mentions highlighted (built with DOM nodes, no HTML).
+    function fillBody(el, text) {
+
+        el.textContent = "";
+
+        text.split("\n").forEach((line, index) => {
+
+            if (index > 0) {
+                el.append(document.createElement("br"));
+            }
+
+            line.split(/(@\w+)/).forEach(part => {
+
+                if (/^@\w+$/.test(part)) {
+
+                    const span = document.createElement("span");
+
+                    const me =
+                        part.slice(1).toLowerCase() ===
+                        currentUsername.toLowerCase();
+
+                    span.className = "mention" + (me ? " me" : "");
+                    span.textContent = part;
+
+                    el.append(span);
+
+                } else if (part) {
+
+                    el.append(document.createTextNode(part));
+
+                }
+
+            });
+
+        });
+
+    }
+
+
+    function markMentioned(messageEl) {
+
+        if (messageEl.querySelector(".mention.me")) {
+            messageEl.classList.add("mentioned");
+        }
+
+    }
+
+
+    // ---- Reactions ----
+
+    function renderReactions(messageId) {
+
+        const messageEl = box.querySelector(
+            `.message[data-message-id="${messageId}"]`
+        );
+
+        if (!messageEl) {
+            return;
+        }
+
+        let holder = messageEl.querySelector(".reactions");
+
+        if (!holder) {
+            holder = document.createElement("div");
+            holder.className = "reactions";
+            messageEl.append(holder);
+        }
+
+        holder.textContent = "";
+
+        const state = reactions[messageId] || {};
+
+        REACTION_EMOJI.forEach(emoji => {
+
+            const users = state[emoji] || [];
+
+            if (!users.length) {
+                return;
+            }
+
+            const chip = document.createElement("button");
+            chip.type = "button";
+            chip.className =
+                "reaction" + (users.includes(currentUserId) ? " mine" : "");
+            chip.dataset.action = "react";
+            chip.dataset.messageId = messageId;
+            chip.dataset.emoji = emoji;
+            chip.textContent = `${emoji} ${users.length}`;
+
+            holder.append(chip);
+
+        });
+
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "reaction add";
+        add.dataset.action = "react-menu";
+        add.dataset.messageId = messageId;
+        add.setAttribute("aria-label", "Add reaction");
+        add.textContent = "☺＋";
+
+        holder.append(add);
+
+    }
+
+
+    function applyReaction(data) {
+
+        reactions[data.message_id] = data.reactions;
+
+        renderReactions(data.message_id);
+
+    }
+
+
+    async function reactTo(messageId, emoji) {
+
+        try {
+
+            const res = await postJson(
+                `/messages/${messageId}/react/`,
+                { emoji: emoji }
+            );
+
+            if (res.status === 429) {
+                flash("Slow down a little.");
+                return;
+            }
+
+            if (!res.ok) {
+                throw new Error("HTTP " + res.status);
+            }
+
+            applyReaction(await res.json());
+
+        } catch (error) {
+
+            console.error("Reaction failed:", error);
+
+            flash("Couldn't add that reaction.");
+
+        }
+
+    }
+
+
+    // ---- Typing indicator ----
+
+    function renderTyping() {
+
+        const names = [...typers.keys()];
+        const el = document.getElementById("typing");
+
+        if (!names.length) {
+            el.textContent = "";
+        } else if (names.length === 1) {
+            el.textContent = `${names[0]} is typing…`;
+        } else if (names.length === 2) {
+            el.textContent = `${names[0]} and ${names[1]} are typing…`;
+        } else {
+            el.textContent = "Several people are typing…";
+        }
+
+    }
+
+
+    function setupTyping() {
+
+        typingChannel = realtime.channels.get(`typing-${conversationId}`);
+
+        typingChannel.subscribe("typing", msg => {
+
+            if (String(msg.clientId) === String(currentUserId)) {
+                return;
+            }
+
+            const name =
+                msg.data && msg.data.name
+                    ? String(msg.data.name).slice(0, 40)
+                    : "Someone";
+
+            clearTimeout(typers.get(name));
+
+            typers.set(name, setTimeout(() => {
+                typers.delete(name);
+                renderTyping();
+            }, 3500));
+
+            renderTyping();
+
+        });
+
+    }
+
+
+    function announceTyping() {
+
+        if (!typingChannel) {
+            return;
+        }
+
+        const now = Date.now();
+
+        if (now - lastTypingSent < 2000) {
+            return;
+        }
+
+        lastTypingSent = now;
+
+        try {
+
+            Promise
+                .resolve(typingChannel.publish("typing", { name: currentUsername }))
+                .catch(() => {});
+
+        } catch (error) {
+
+            // Typing indicators are optional; ignore failures.
+
+        }
+
+    }
+
+
+    // ---- Who's online ----
+
+    async function setupPresence(channel) {
+
+        const onlineEl = document.getElementById("online");
+
+        async function refresh() {
+
+            try {
+
+                const members = await channel.presence.get();
+
+                const names = new Map();
+
+                members.forEach(member => {
+                    names.set(
+                        member.clientId,
+                        (member.data && member.data.name) || "Someone"
+                    );
+                });
+
+                onlineEl.textContent = `● ${names.size} online`;
+                onlineEl.title = [...names.values()].join(", ");
+
+            } catch (error) {
+
+                console.warn("[presence]", error);
+
+            }
+
+        }
+
+        try {
+
+            await channel.presence.enter({ name: currentUsername });
+
+            channel.presence.subscribe(refresh);
+
+            refresh();
+
+        } catch (error) {
+
+            console.warn("[presence] unavailable:", error);
+
+        }
+
+    }
+
+
     function addMessage(data) {
 
         const id = Number(data.id);
@@ -272,6 +577,13 @@
 
         if (blockedIds.has(Number(data.sender_id))) {
             return;
+        }
+
+        // They just sent something, so they're no longer "typing".
+        if (typers.has(data.sender)) {
+            clearTimeout(typers.get(data.sender));
+            typers.delete(data.sender);
+            renderTyping();
         }
 
 
@@ -338,10 +650,13 @@
 
         const bubble = document.createElement("div");
         bubble.className = "bubble";
-        bubble.textContent = data.body;
+        fillBody(bubble, data.body);
 
         wrap.append(meta, bubble);
         box.appendChild(wrap);
+
+        renderReactions(id);
+        markMentioned(wrap);
 
         scrollDown();
 
@@ -462,6 +777,27 @@
             }
 
         });
+
+        channel.subscribe("reaction", msg => {
+
+            try {
+
+                applyReaction(
+                    typeof msg.data === "string"
+                        ? JSON.parse(msg.data)
+                        : msg.data
+                );
+
+            } catch (error) {
+
+                console.error("Could not process reaction:", error);
+
+            }
+
+        });
+
+        setupTyping();
+        setupPresence(channel);
 
         realtime.connection.on("connected", () => {
 
@@ -677,6 +1013,124 @@
             flash("Something went wrong.");
 
         }
+
+    });
+
+
+    // Reaction chips, the "add reaction" button and its little picker.
+    box.addEventListener("click", event => {
+
+        const button = event.target.closest("[data-action]");
+
+        if (!button) {
+            return;
+        }
+
+        const action = button.dataset.action;
+
+        if (action === "react") {
+
+            reactTo(button.dataset.messageId, button.dataset.emoji);
+
+        }
+
+        if (action === "react-menu") {
+
+            const holder = button.closest(".reactions");
+            const open = holder.querySelector(".reaction-picker");
+
+            if (open) {
+                open.remove();
+                return;
+            }
+
+            const picker = document.createElement("div");
+            picker.className = "reaction-picker";
+
+            REACTION_EMOJI.forEach(emoji => {
+
+                const choice = document.createElement("button");
+                choice.type = "button";
+                choice.dataset.action = "react";
+                choice.dataset.messageId = button.dataset.messageId;
+                choice.dataset.emoji = emoji;
+                choice.textContent = emoji;
+
+                picker.append(choice);
+
+            });
+
+            holder.append(picker);
+
+        }
+
+    });
+
+
+    // Emoji picker for the message box.
+    const EMOJI = [
+        "😀", "😂", "🥹", "😍", "😎", "🤔", "😅", "😭", "😡",
+        "👍", "👎", "🙏", "👏", "🔥", "❤️", "🎉", "💀", "👀"
+    ];
+
+    const emojiRow = document.getElementById("emoji-row");
+    const emojiBtn = document.getElementById("emoji-btn");
+
+    function insertAtCursor(text) {
+
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? start;
+
+        input.value =
+            input.value.slice(0, start) + text + input.value.slice(end);
+
+        const position = start + text.length;
+
+        input.focus();
+        input.setSelectionRange(position, position);
+
+    }
+
+    EMOJI.forEach(emoji => {
+
+        const choice = document.createElement("button");
+        choice.type = "button";
+        choice.textContent = emoji;
+
+        choice.addEventListener("click", () => insertAtCursor(emoji));
+
+        emojiRow.append(choice);
+
+    });
+
+    emojiBtn.addEventListener("click", () => {
+        emojiRow.hidden = !emojiRow.hidden;
+    });
+
+
+    // Tell the room we're typing (throttled; not for slash commands).
+    input.addEventListener("input", () => {
+
+        if (input.value.trim() && !input.value.startsWith("/")) {
+            announceTyping();
+        }
+
+    });
+
+
+    // Click "N online" to see who's here (hover works on desktop).
+    document.getElementById("online").addEventListener("click", event => {
+
+        flash(event.currentTarget.title || "Just you for now.");
+
+    });
+
+
+    // Draw reactions and mention highlights for the messages already on screen.
+    box.querySelectorAll(".message").forEach(el => {
+
+        renderReactions(el.dataset.messageId);
+        markMentioned(el);
 
     });
 

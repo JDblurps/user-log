@@ -20,11 +20,13 @@ from .models import (
     Membership,
     Message,
     Profile,
+    Reaction,
     Report,
     SignupAttempt,
 )
 from . import realtime
 from .avatars import AVATARS, COLORS, avatar_info, avatar_payload
+from .features import REACTIONS, apply_command
 from .utils import (
     blocked_ids_for,
     client_ip,
@@ -352,6 +354,16 @@ def conversation_view(request, conversation_id):
 
     recent.reverse()
 
+    # Reactions for the messages on screen: {message_id: {emoji: [user_ids]}}
+    reaction_data = {}
+
+    reaction_rows = Reaction.objects.filter(
+        message_id__in=[m.id for m in recent]
+    ).values_list("message_id", "emoji", "user_id")
+
+    for message_id, emoji, user_id in reaction_rows:
+        reaction_data.setdefault(message_id, {}).setdefault(emoji, []).append(user_id)
+
     return render(
         request,
         "messaging/conversation.html",
@@ -361,6 +373,8 @@ def conversation_view(request, conversation_id):
             "chat_messages": recent,
             "blocked_ids": sorted(blocked),
             "realtime": realtime.enabled(),
+            "reaction_data": reaction_data,
+            "reaction_emoji": REACTIONS,
         }
     )
 
@@ -437,6 +451,9 @@ def send_message(request, conversation_id):
 
     if not body or len(body) > 4000:
         return JsonResponse({"error": "invalid message"}, status=400)
+
+    # Slash commands (/roll, /flip, /8ball, /choose, /me, /shrug).
+    body = apply_command(request.user.username, body)[:4000]
 
     # Basic flood protection: one message per half second per user.
     too_fast = Message.objects.filter(
@@ -626,3 +643,75 @@ def profile_view(request):
             "selected_avatar": profile.avatar,
         }
     )
+
+
+# ---------- Reactions ----------
+
+def reaction_state(message):
+    """{emoji: [user_ids]} for one message."""
+
+    state = {}
+
+    for emoji, user_id in Reaction.objects.filter(
+        message=message
+    ).values_list("emoji", "user_id"):
+        state.setdefault(emoji, []).append(user_id)
+
+    return state
+
+
+@login_required
+@require_POST
+def react_to_message(request, message_id):
+    """Toggle your reaction on a message and tell everyone in the room."""
+
+    message = get_object_or_404(Message, pk=message_id)
+
+    get_object_or_404(
+        Membership,
+        conversation_id=message.conversation_id,
+        user=request.user
+    )
+
+    try:
+        emoji = str(json.loads(request.body).get("emoji", ""))
+    except (ValueError, AttributeError):
+        emoji = ""
+
+    if emoji not in REACTIONS:
+        return JsonResponse({"error": "invalid"}, status=400)
+
+    existing = Reaction.objects.filter(
+        message=message,
+        user=request.user,
+        emoji=emoji
+    )
+
+    if existing.exists():
+
+        existing.delete()
+
+    else:
+
+        recent = Reaction.objects.filter(
+            user=request.user,
+            created_at__gte=timezone.now() - timedelta(minutes=1)
+        ).count()
+
+        if recent >= 30:
+            return JsonResponse({"error": "slow down"}, status=429)
+
+        Reaction.objects.create(
+            message=message,
+            user=request.user,
+            emoji=emoji
+        )
+
+    payload = {
+        "message_id": message.id,
+        "reactions": reaction_state(message),
+    }
+
+    realtime.publish(message.conversation_id, payload, event="reaction")
+
+    return JsonResponse(payload)
